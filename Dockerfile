@@ -7,7 +7,7 @@ ARG HOMEBRIDGE_VERSION=latest
 ARG CONFIG_UI_VERSION=latest
 
 LABEL org.opencontainers.image.title="homebridge-uxc" \
-      org.opencontainers.image.source="https://github.com/micpro7/HomeBridge-UXC"
+      org.opencontainers.image.source="https://github.com/micpro7/openwrt-uxc-homebridge"
 
 # ==========================================================
 # System dependencies
