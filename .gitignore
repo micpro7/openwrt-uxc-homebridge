@@ -1,1 +1,11 @@
-.github/.DS_Store
+# macOS system files
+.DS_Store
+
+# If you create local builds or exported bundles, ignore them
+/dist/
+/build/
+
+# Editor swap files
+*.swp
+*~
+*.log
