@@ -6,7 +6,8 @@ FROM node:24-alpine
 ARG HOMEBRIDGE_VERSION=latest
 ARG CONFIG_UI_VERSION=latest
 
-LABEL org.opencontainers.image.title="homebridge-uxc" \
+LABEL org.opencontainers.image.title="openwrt-uxc-homebridge" \
+      org.opencontainers.image.description="Homebridge deployment for OpenWrt using native UXC containers" \
       org.opencontainers.image.source="https://github.com/micpro7/openwrt-uxc-homebridge"
 
 # ==========================================================
