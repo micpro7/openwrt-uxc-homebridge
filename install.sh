@@ -25,7 +25,7 @@ CONTAINER_NAME="homebridge"
 
 BUNDLE_PATH="/mnt/X6/UXC/homebridge"
 
-CONFIG_PATH="/mnt/SSD/Config/OpenWrt/UXC/homebridge"
+CONFIG_PATH="/mnt/SSD/Config/OpenWRT/UXC/homebridge"
 
 ARCHIVE="/mnt/X6/homebridge.tar.gz"
 echo -e "\n\n\n"
