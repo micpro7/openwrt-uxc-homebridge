@@ -84,8 +84,8 @@ jobs:
           # Validate runtime exists at /usr/local/bin/node (Alpine/Node image path)
           test -x bundle/rootfs/usr/local/bin/node
 
-          # Create final bundle
-          tar -czf homebridge-arm64.tar.gz -C bundle .
+          # Create final bundle (Force Root Ownership)
+          tar --owner=0 --group=0 -czf homebridge-arm64.tar.gz -C bundle .
 
       # ==========================================================
       # STEP 3: Minimal sanity check
