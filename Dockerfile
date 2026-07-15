@@ -31,7 +31,6 @@ RUN apk update && apk upgrade \
     make \
     g++ \
     git \
-    sudo \
     linux-headers
 
 # ==========================================================
