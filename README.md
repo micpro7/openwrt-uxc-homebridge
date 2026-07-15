@@ -22,8 +22,8 @@ To deploy this bundle on your OpenWrt router, use the provided installation scri
  2. **Run Installer**: Download and execute the installer script (customized to your local paths):
    bash
    # Example deployment command
-   ./install.sh
-   
+curl -sL https://raw.githubusercontent.com/micpro7/openwrt-uxc-homebridge/main/install.sh | sh
+
  3. **Validation**: The installer automatically validates the OCI bundle integrity and registers the container with the uxc runtime.
 ### Configuration Design
  * **Host Persistence**: Configuration and plugins are bound via rbind to external SSD storage.
