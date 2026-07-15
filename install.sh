@@ -401,7 +401,8 @@ echo "✅ Persistent Homebridge procd service installed."
 echo "========(+) DONE ✅ (+)========"
 printf '\n\n\n'
 
+echo "🛠️ Probing Container Size..."
 u -sh "$BUNDLE_PATH"
-
+printf '\n\n\n'
 
 echo "🎉 ======== MASTER PIPELINE DEPLOYMENT COMPLETE ======== 🎉"
