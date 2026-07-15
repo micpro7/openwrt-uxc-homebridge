@@ -72,6 +72,7 @@ ENV HOME=/root \
     TZ=UTC \
     NODE_ENV=production \
     NPM_CONFIG_CACHE=/var/lib/homebridge/.npm-cache \
-    NPM_CONFIG_TMP=/var/lib/homebridge/.npm-tmp
+    NPM_CONFIG_TMP=/var/lib/homebridge/.npm-tmp \
+    HOMEBRIDGE_CONFIG_UI=1
 
 WORKDIR /var/lib/homebridge
