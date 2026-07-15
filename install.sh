@@ -84,32 +84,30 @@ echo "🧹 [Phase 2] Clearing out stale runtime structures..."
 uxc kill "$CONTAINER_NAME" 2>/dev/null || true
 uxc delete "$CONTAINER_NAME" --force 2>/dev/null || true
 
+echo "[i] Removing previous container..."
+rm -rf "$BUNDLE_PATH"
 echo "========(+) DONE ✅ (+)========"
 printf '\n\n\n'
-
 
 # ==========================================
 # Phase 3: Structural Path Assembly
 # ==========================================
 echo "📂 [Phase 3] Constructing host storage target directories..."
 
-rm -rf "$BUNDLE_PATH"
-
+echo "[i] Creating directories..."
 mkdir -p "$BUNDLE_PATH"
 mkdir -p "$PERSISTENT_DATA_SOURCE"
-
 sync
 
 echo "========(+) DONE ✅ (+)========"
 printf '\n\n\n'
-
 
 # ==========================================
 # Phase 4: Bundle Fetch & Verification
 # ==========================================
 echo "📥 [Phase 4] Pulling production blueprint package from GitHub..."
 
-wget -O "$ARCHIVE" "$BUNDLE_URL"
+wget -q --show-progress -O "$ARCHIVE" "$BUNDLE_URL"
 
 printf '\n\n\n'
 
