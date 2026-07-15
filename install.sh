@@ -19,7 +19,7 @@ ARCHIVE="/mnt/X6/homebridge.tar.gz"
 CONTAINER_NAME="homebridge"
 TARGET_MOUNT="/mnt/X6"                     # Physical host SSD mount point
 BUNDLE_PATH="/mnt/X6/UXC/homebridge"       # Target path for config.json and rootfs
-PERSISTENT_DATA_SOURCE="/mnt/X6/homebridge-data" # Path for persistent accessory configurations
+PERSISTENT_DATA_SOURCE="/mnt/X6/UXC/homebridge-data" # Path for persistent accessory configurations
 
 # ==============================================================================
 # ENVIRONMENT VARIABLES & PERFORMANCE TUNING
