@@ -21,7 +21,7 @@
     ],
     "env": [
       "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-      "HOME=/root",
+      "HOME=/var/lib/homebridge",
       "TERM=xterm",
       "TZ=UTC",
       "NODE_ENV=production",
