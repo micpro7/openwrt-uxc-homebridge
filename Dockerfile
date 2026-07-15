@@ -70,6 +70,8 @@ RUN set -eux; \
 # ==========================================================
 ENV HOME=/root \
     TZ=UTC \
-    NODE_ENV=production
+    NODE_ENV=production \
+    NPM_CONFIG_CACHE=/var/lib/homebridge/.npm-cache \
+    NPM_CONFIG_TMP=/var/lib/homebridge/.npm-tmp
 
 WORKDIR /var/lib/homebridge
