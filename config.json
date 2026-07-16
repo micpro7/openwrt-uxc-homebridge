@@ -11,13 +11,13 @@
   "process": {
     "terminal": false,
     "user": {
-      "uid": 0,
-      "gid": 0
+      "uid": 10001,
+      "gid": 10001
     },
     "args": [
       "/bin/sh",
       "-c",
-      "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/plugins; echo 'Homebridge crashed - restarting in 3s'; sleep 3; done"
+      "while true; do /usr/local/bin/hb-service run -U /var/lib/homebridge -P /var/lib/homebridge/plugins; echo 'Homebridge crashed - restarting in 3s'; sleep 3; done"
     ],
     "env": [
       "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
