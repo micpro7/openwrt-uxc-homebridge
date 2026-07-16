@@ -66,7 +66,7 @@ jobs:
           sudo tar -xpf rootfs.tar -C bundle/rootfs
           rm -f rootfs.tar
 
-          # Strip unnecessary files
+          # Strip unnecessary files to minimize UXC footprint
           sudo rm -rf bundle/rootfs/usr/share/man \
                       bundle/rootfs/usr/share/doc \
                       bundle/rootfs/var/cache/apk/* \
@@ -106,17 +106,31 @@ jobs:
       # ==========================================================
       # STEP 4: Release
       # ==========================================================
-      - name: Determine Release Name
+      - name: Determine Release Name and Details
         run: |
           set -eux
           CURRENT_DATE=$(date +'%Y-%m-%d')
-          # Extract version from the uncompressed bundle
+          
+          # Extract Homebridge version from the uncompressed bundle
           if [ -f "bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json" ]; then
             HB_VERSION=$(grep -m 1 '"version"' bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json | awk -F'"' '{print $4}')
           else
             HB_VERSION="${{ inputs.homebridge_version || 'latest' }}"
           fi
+
+          # Extract exact Node and NPM versions from rootfs
+          NODE_VERSION=$(sudo bundle/rootfs/usr/local/bin/node --version | tr -d 'v')
+          NPM_VERSION=$(sudo bundle/rootfs/usr/local/bin/node -e "console.log(require('child_process').execSync('npm --version').toString().trim())")
+          
+          # Calculate exact compressed bundle size
+          BUNDLE_SIZE=$(du -sh homebridge-arm64.tar.gz | cut -f1)
+
+          # Export metrics directly to GITHUB_ENV for the release body
           echo "RELEASE_NAME=Homebridge V${HB_VERSION}-${CURRENT_DATE}" >> $GITHUB_ENV
+          echo "HB_VERSION=${HB_VERSION}" >> $GITHUB_ENV
+          echo "NODE_VERSION=${NODE_VERSION}" >> $GITHUB_ENV
+          echo "NPM_VERSION=${NPM_VERSION}" >> $GITHUB_ENV
+          echo "BUNDLE_SIZE=${BUNDLE_SIZE}" >> $GITHUB_ENV
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -126,11 +140,15 @@ jobs:
           make_latest: true
           files: homebridge-arm64.tar.gz
           body: |
-            Homebridge UXC Bundle (Stable Build)
+            ### 📦 Release Asset Details
+            * **Release Version:** `Homebridge v${{ env.HB_VERSION }}`
+            * **Compiled Asset Size:** `${{ env.BUNDLE_SIZE }}` (Uncompressed filesystem-based OCI export)
+            * **Target Architecture:** `ARM64 (aarch64)`
+            * **Base Environment:** `Alpine 3.22` running `Node.js v${{ env.NODE_VERSION }}` and `NPM v${{ env.NPM_VERSION }}`
 
-            -----------------------------
-            DESIGN NOTES
-            -----------------------------
+            ---
+
+            ### ⚙️ Design Notes
             - Homebridge is installed inside Docker image only
             - Configured to run securely as a non-root user (UID/GID 10001)
             - Setup directories are pre-owned by the low-privilege 'homebridge' user
@@ -139,8 +157,8 @@ jobs:
             - No dependency inspection is done on GitHub runner
             - Bundle is purely filesystem-based OCI export with preserved permissions
 
-            -----------------------------
-            BUILD INFO
-            -----------------------------
-            Base: Alpine 3.22 (arm64)
-            Build system: Docker Buildx
+            ---
+
+            ### 🛠️ Build Info
+            - **Base:** Alpine 3.22 (arm64)
+            - **Build System:** Native `ubuntu-24.04-arm` runner utilizing Docker Buildx Cache
