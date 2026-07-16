@@ -50,6 +50,7 @@ jobs:
             --build-arg CONFIG_UI_VERSION="${{ inputs.config_ui_version || 'latest' }}" \
             --cache-from type=gha \
             --cache-to type=gha,mode=max \
+            --tag homebridge-build:local \
             --output type=tar,dest=rootfs.tar \
             .
 
@@ -111,16 +112,17 @@ jobs:
           set -eux
           CURRENT_DATE=$(date +'%Y-%m-%d')
           
-          # Extract Homebridge version from the uncompressed bundle
+          # Extract Homebridge version from the uncompressed bundle filesystem
           if [ -f "bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json" ]; then
             HB_VERSION=$(grep -m 1 '"version"' bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json | awk -F'"' '{print $4}')
           else
             HB_VERSION="${{ inputs.homebridge_version || 'latest' }}"
           fi
 
-          # Extract exact Node and NPM versions from rootfs
-          NODE_VERSION=$(sudo bundle/rootfs/usr/local/bin/node --version | tr -d 'v')
-          NPM_VERSION=$(sudo bundle/rootfs/usr/local/bin/node -e "console.log(require('child_process').execSync('npm --version').toString().trim())")
+          # Extract Node and NPM versions securely by running a quick container execution
+          # (This avoids dynamic linker library issues with Alpine binaries on Ubuntu hosts)
+          NODE_VERSION=$(docker run --rm --entrypoint node homebridge-build:local --version | tr -d 'v' | tr -d '\r')
+          NPM_VERSION=$(docker run --rm --entrypoint npm homebridge-build:local --version | tr -d '\r')
           
           # Calculate exact compressed bundle size
           BUNDLE_SIZE=$(du -sh homebridge-arm64.tar.gz | cut -f1)
