@@ -125,5 +125,5 @@ WORKDIR /var/lib/homebridge
 # ==========================================================
 USER homebridge
 
-# Default command to start Homebridge via its UI companion
-CMD ["homebridge-config-ui-x", "-I"]
+# Automatically initialize empty external SSD mounts with package manifests on startup
+CMD ["/bin/sh", "-c", "if [ ! -f /var/lib/homebridge/package.json ]; then echo '{\"private\": true, \"dependencies\": {}}' > /var/lib/homebridge/package.json; fi; mkdir -p /var/lib/homebridge/node_modules; exec homebridge-config-ui-x -I"]
