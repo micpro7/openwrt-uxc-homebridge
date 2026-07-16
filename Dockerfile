@@ -58,10 +58,17 @@ RUN apk add --no-cache \
     # Provides Linux kernel headers required for compiling native drivers. [~5 MB]
 
 # ==========================================================
+# User & Group Setup (Non-root security context)
+# ==========================================================
+RUN addgroup -S -g 10001 homebridge \
+ && adduser -S -u 10001 -G homebridge -h /var/lib/homebridge -s /bin/sh homebridge
+
+# ==========================================================
 # CRITICAL: Configure sudo to preserve NPM environment variables
 # (Prevents sudo from stripping cache and path environments)
+# AND allow the non-root homebridge user to run commands without a password.
 # ==========================================================
-RUN echo "root ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/homebridge \
+RUN echo "homebridge ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/homebridge \
  && echo "Defaults env_keep += \"NPM_CONFIG_CACHE NPM_CONFIG_TMP HOME NODE_ENV PATH\"" >> /etc/sudoers.d/homebridge
 
 # ==========================================================
@@ -103,10 +110,19 @@ RUN set -eux; \
     node -e "console.log(require('/usr/local/lib/node_modules/homebridge-config-ui-x/package.json').version)"
 
 # ==========================================================
-# Directory Setup & Target Working Directory
+# Directory Setup, Ownership & Target Working Directory
 # ==========================================================
 RUN mkdir -p /var/lib/homebridge/.npm-cache \
              /var/lib/homebridge/.npm-tmp \
-             /var/lib/homebridge/plugins
+             /var/lib/homebridge/plugins \
+ && chown -R homebridge:homebridge /var/lib/homebridge
 
 WORKDIR /var/lib/homebridge
+
+# ==========================================================
+# Drop privileges to non-root user
+# ==========================================================
+USER homebridge
+
+# Default command to start Homebridge via its UI companion
+CMD ["homebridge-config-ui-x", "-I"]
