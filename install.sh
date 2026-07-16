@@ -1,3 +1,7 @@
+#!/bin/sh
+# Safe-mode: Exit immediately if any command fails
+set -e
+
 echo "========================================================"
 echo " ⚡ HOMEBRIDGE UXC MASTER INITIALIZATION ENGINE ⚡"
 echo "========================================================"
@@ -11,15 +15,17 @@ printf '\n\n\n'
 # GITHUB DOWNLOAD CONFIGURATION
 # ==============================================================================
 BUNDLE_URL="https://github.com/micpro7/openwrt-uxc-homebridge/releases/latest/download/homebridge-arm64.tar.gz"
-ARCHIVE="/mnt/X6/homebridge.tar.gz"
 
 # ==============================================================================
 # CONFIGURATION VARIABLES (Edit these to tune your deployment)
 # ==============================================================================
 CONTAINER_NAME="homebridge"
 TARGET_MOUNT="/mnt/X6"                     # Physical host SSD mount point
-BUNDLE_PATH="/mnt/X6/UXC/$CONTAINER_NAME/bundle"       # Target path for config.json and rootfs
-PERSISTENT_DATA_SOURCE="/mnt/X6/UXC/$CONTAINER_NAME/data" # Path for persistent accessory configurations
+
+# Derived Variables: Moving TARGET_MOUNT moves the entire installation setup
+ARCHIVE="$TARGET_MOUNT/homebridge.tar.gz"
+BUNDLE_PATH="$TARGET_MOUNT/UXC/$CONTAINER_NAME/bundle"
+PERSISTENT_DATA_SOURCE="$TARGET_MOUNT/UXC/$CONTAINER_NAME/data"
 
 # ==============================================================================
 # ENVIRONMENT VARIABLES & PERFORMANCE TUNING
@@ -69,8 +75,17 @@ printf '\n\n\n'
 # ==========================================
 echo "🔄 [Phase 1] Syncing OpenWrt core infrastructure dependencies..."
 
+# Verify the SSD is mounted before proceeding to prevent writing to RAM
+echo "🔍 Verifying target storage..."
+if ! grep -qs " $TARGET_MOUNT " /proc/mounts; then
+    echo "❌ Error: $TARGET_MOUNT is not mounted. Aborting to avoid running in RAM." >&2
+    exit 1
+fi
+echo "✅ $TARGET_MOUNT verified successfully."
+
 apk update
-apk add uxc procd-ujail kmod-veth jq
+# --no-cache avoids bloating the router's overlay storage with packages
+apk add --no-cache uxc procd-ujail kmod-veth jq
 
 echo "========(+) DONE ✅ (+)========"
 printf '\n\n\n'
@@ -84,7 +99,7 @@ echo "🧹 [Phase 2] Clearing out stale runtime structures..."
 uxc kill "$CONTAINER_NAME" 2>/dev/null || true
 uxc delete "$CONTAINER_NAME" --force 2>/dev/null || true
 
-echo "[i] Removing previous container..."
+echo "[i] Removing previous container bundle..."
 rm -rf "$BUNDLE_PATH"
 echo "========(+) DONE ✅ (+)========"
 printf '\n\n\n'
@@ -107,34 +122,44 @@ printf '\n\n\n'
 # ==========================================
 echo "📥 [Phase 4] Pulling production blueprint package from GitHub..."
 
-wget -q --show-progress -O "$ARCHIVE" "$BUNDLE_URL"
+if ! wget -q --show-progress -O "$ARCHIVE" "$BUNDLE_URL"; then
+    echo "❌ Error: Failed to download Homebridge bundle." >&2
+    exit 1
+fi
 
 printf '\n\n\n'
 
 echo "📦 Extracting package payload onto $TARGET_MOUNT storage..."
 
-tar -xpf "$ARCHIVE" -C "$BUNDLE_PATH"
+if ! tar -xpf "$ARCHIVE" -C "$BUNDLE_PATH"; then
+    echo "❌ Error: Failed to extract Homebridge bundle." >&2
+    rm -f "$ARCHIVE"
+    rm -rf "$BUNDLE_PATH"
+    exit 1
+fi
 
 sync
-
 rm -f "$ARCHIVE"
 
 printf '\n\n\n'
 
-
-if [ -f "$BUNDLE_PATH/config.json" ] && [ -d "$BUNDLE_PATH/rootfs" ]; then
-
-    echo "   config.json validated  ✅"
-    echo "   rootfs engine verified ✅"
-    echo "🚀 OCI application bundle fully authenticated."
-
-else
-
-    echo "❌ [ERROR] Structural corruption detected during extraction. Halting deployment."
+# Validate system structure presence
+if [ ! -f "$BUNDLE_PATH/config.json" ] || [ ! -d "$BUNDLE_PATH/rootfs" ]; then
+    echo "❌ [ERROR] Missing critical bundle files. Halting deployment." >&2
+    rm -rf "$BUNDLE_PATH"
     exit 1
-
 fi
 
+# Deep validation of structural JSON syntax integrity
+if ! jq empty "$BUNDLE_PATH/config.json" >/dev/null 2>&1; then
+    echo "❌ [ERROR] config.json is invalid or corrupt. Halting deployment." >&2
+    rm -rf "$BUNDLE_PATH"
+    exit 1
+fi
+
+echo "   config.json validated  ✅"
+echo "   rootfs engine verified ✅"
+echo "🚀 OCI application bundle fully authenticated."
 
 echo "========(+) DONE ✅ (+)========"
 printf '\n\n\n'
@@ -144,67 +169,60 @@ printf '\n\n\n'
 # ==========================================
 echo "📝 [Phase 5] Injecting master variable matrix via individual JQ splits..."
 
-if [ -f "$BUNDLE_PATH/config.json" ]; then
+# Split 1: Update Persistent Storage Path Mount Source
+jq --arg src "$PERSISTENT_DATA_SOURCE" \
+    '.mounts = (.mounts | map(if .destination == "/var/lib/homebridge" then .source = $src else . end))' \
+    "$BUNDLE_PATH/config.json" > "$BUNDLE_PATH/config.json.tmp" && mv "$BUNDLE_PATH/config.json.tmp" "$BUNDLE_PATH/config.json"
 
-    # Split 1: Update Persistent Storage Path Mount Source
-    jq --arg src "$PERSISTENT_DATA_SOURCE" \
-        '.mounts = (.mounts | map(if .destination == "/var/lib/homebridge" then .source = $src else . end))' \
-        "$BUNDLE_PATH/config.json" > "$BUNDLE_PATH/config.json.tmp" && mv "$BUNDLE_PATH/config.json.tmp" "$BUNDLE_PATH/config.json"
-
-    echo "   ↳ Mount Target bound to: $PERSISTENT_DATA_SOURCE ✅"
+echo "   ↳ Mount Target bound to: $PERSISTENT_DATA_SOURCE ✅"
 
 
-    # Split 2: Update Timezone (TZ)
-    jq --arg tz "TZ=$TIMEZONE" \
-        '.process.env = (.process.env | map(if startswith("TZ=") then $tz else . end))' \
-        "$BUNDLE_PATH/config.json" > "$BUNDLE_PATH/config.json.tmp" && mv "$BUNDLE_PATH/config.json.tmp" "$BUNDLE_PATH/config.json"
+# Split 2: Update Timezone (TZ)
+jq --arg tz "TZ=$TIMEZONE" \
+    '.process.env = (.process.env | map(if startswith("TZ=") then $tz else . end))' \
+    "$BUNDLE_PATH/config.json" > "$BUNDLE_PATH/config.json.tmp" && mv "$BUNDLE_PATH/config.json.tmp" "$BUNDLE_PATH/config.json"
 
-    echo "   ↳ Timezone assigned to: $TIMEZONE ✅"
-
-
-    # Split 3: Update MDNS Interface Network Bridge
-    jq --arg mdns "MDNS_INTERFACE=$MDNS_NET_INTERFACE" \
-        '.process.env = (.process.env | map(if startswith("MDNS_INTERFACE=") then $mdns else . end))' \
-        "$BUNDLE_PATH/config.json" > "$BUNDLE_PATH/config.json.tmp" && mv "$BUNDLE_PATH/config.json.tmp" "$BUNDLE_PATH/config.json"
-
-    echo "   ↳ mDNS broadcast mapped to: $MDNS_NET_INTERFACE ✅"
+echo "   ↳ Timezone assigned to: $TIMEZONE ✅"
 
 
-    # Split 4: Update Node.js Old Space Memory Constraints
-    jq --arg node_opt "NODE_OPTIONS=--max-old-space-size=$NODE_MEMORY_LIMIT" \
-        '.process.env = (.process.env | map(if startswith("NODE_OPTIONS=") then $node_opt else . end))' \
-        "$BUNDLE_PATH/config.json" > "$BUNDLE_PATH/config.json.tmp" && mv "$BUNDLE_PATH/config.json.tmp" "$BUNDLE_PATH/config.json"
+# Split 3: Update MDNS Interface Network Bridge
+jq --arg mdns "MDNS_INTERFACE=$MDNS_NET_INTERFACE" \
+    '.process.env = (.process.env | map(if startswith("MDNS_INTERFACE=") then $mdns else . end))' \
+    "$BUNDLE_PATH/config.json" > "$BUNDLE_PATH/config.json.tmp" && mv "$BUNDLE_PATH/config.json.tmp" "$BUNDLE_PATH/config.json"
 
-    echo "   ↳ Node engine memory threshold set to: ${NODE_MEMORY_LIMIT}MB ✅"
-
-
-    # Split 5: Update Libuv Thread Pool Allocation
-    jq --arg threads "UV_THREADPOOL_SIZE=$THREAD_POOL_SIZE" \
-        '.process.env = (.process.env | map(if startswith("UV_THREADPOOL_SIZE=") then $threads else . end))' \
-        "$BUNDLE_PATH/config.json" > "$BUNDLE_PATH/config.json.tmp" && mv "$BUNDLE_PATH/config.json.tmp" "$BUNDLE_PATH/config.json"
-
-    echo "   ↳ Libuv backend worker threads balanced at: $THREAD_POOL_SIZE ✅"
+echo "   ↳ mDNS broadcast mapped to: $MDNS_NET_INTERFACE ✅"
 
 
-    # Split 6: Update Homebridge Binding IP Target
-    jq --arg ip "HOMEBRIDGE_IP=$BIND_IP" \
-        '.process.env = (.process.env | map(if startswith("HOMEBRIDGE_IP=") then $ip else . end))' \
-        "$BUNDLE_PATH/config.json" > "$BUNDLE_PATH/config.json.tmp" && mv "$BUNDLE_PATH/config.json.tmp" "$BUNDLE_PATH/config.json"
+# Split 4: Update Node.js Old Space Memory Constraints
+jq --arg node_opt "NODE_OPTIONS=--max-old-space-size=$NODE_MEMORY_LIMIT" \
+    '.process.env = (.process.env | map(if startswith("NODE_OPTIONS=") then $node_opt else . end))' \
+    "$BUNDLE_PATH/config.json" > "$BUNDLE_PATH/config.json.tmp" && mv "$BUNDLE_PATH/config.json.tmp" "$BUNDLE_PATH/config.json"
 
-    echo "   ↳ Network socket interface listening on: $BIND_IP ✅"
-
-
-    # Split 7: Toggle Kernel Security Boundaries
-    jq --argjson nnp "$NO_NEW_PRIVILEGES" \
-        '.process.noNewPrivileges = $nnp' \
-        "$BUNDLE_PATH/config.json" > "$BUNDLE_PATH/config.json.tmp" && mv "$BUNDLE_PATH/config.json.tmp" "$BUNDLE_PATH/config.json"
-
-    echo "   ↳ Kernel privilege escalation guard: $NO_NEW_PRIVILEGES ✅"
+echo "   ↳ Node engine memory threshold set to: ${NODE_MEMORY_LIMIT}MB ✅"
 
 
-    logger -t homebridge_boot "All individual configuration targets processed."
+# Split 5: Update Libuv Thread Pool Allocation
+jq --arg threads "UV_THREADPOOL_SIZE=$THREAD_POOL_SIZE" \
+    '.process.env = (.process.env | map(if startswith("UV_THREADPOOL_SIZE=") then $threads else . end))' \
+    "$BUNDLE_PATH/config.json" > "$BUNDLE_PATH/config.json.tmp" && mv "$BUNDLE_PATH/config.json.tmp" "$BUNDLE_PATH/config.json"
 
-fi
+echo "   ↳ Libuv backend worker threads balanced at: $THREAD_POOL_SIZE ✅"
+
+
+# Split 6: Update Homebridge Binding IP Target
+jq --arg ip "HOMEBRIDGE_IP=$BIND_IP" \
+    '.process.env = (.process.env | map(if startswith("HOMEBRIDGE_IP=") then $ip else . end))' \
+    "$BUNDLE_PATH/config.json" > "$BUNDLE_PATH/config.json.tmp" && mv "$BUNDLE_PATH/config.json.tmp" "$BUNDLE_PATH/config.json"
+
+echo "   ↳ Network socket interface listening on: $BIND_IP ✅"
+
+
+# Split 7: Toggle Kernel Security Boundaries
+jq --argjson nnp "$NO_NEW_PRIVILEGES" \
+    '.process.noNewPrivileges = $nnp' \
+    "$BUNDLE_PATH/config.json" > "$BUNDLE_PATH/config.json.tmp" && mv "$BUNDLE_PATH/config.json.tmp" "$BUNDLE_PATH/config.json"
+
+echo "   ↳ Kernel privilege escalation guard: $NO_NEW_PRIVILEGES ✅"
 
 
 printf '\n\n\n'
@@ -219,33 +237,22 @@ printf '\n\n\n'
 # ==========================================
 echo "🏗️ [Phase 6] Registering container blueprint with UXC engine..."
 
-
 uxc create "$CONTAINER_NAME" \
     --bundle "$BUNDLE_PATH" \
     --mounts "$TARGET_MOUNT"
 
-
 printf '\n\n\n'
-
 
 echo "⏳ Holding engine execution for stabilization (3s)..."
-
 sleep 3
-
-
 printf '\n\n\n'
-
 
 echo "🏁 Spawning Homebridge runtime daemon..."
-
 uxc start "$CONTAINER_NAME"
-
 
 printf '\n\n\n'
 
-
 echo "✨ Active container framework status verified:"
-
 uxc list
 
 echo "========(+) DONE ✅ (+)========"
@@ -257,18 +264,18 @@ printf '\n\n\n'
 # ==============================================================================
 echo "🛠️ Installing persistent Homebridge procd startup service..."
 
-
 cat > /etc/init.d/homebridge << 'EOF'
 #!/bin/sh /etc/rc.common
 
 START=99
-USE_PROCD=1
+STOP=10
 
+# Register "status" as a valid command to prevent the rc.common syntax help loop
+extra_command "status" "Print the status of the Homebridge container"
 
 # ==============================================================================
 # LOAD MASTER VARIABLES
 # ==============================================================================
-
 if [ -f /etc/homebridge.conf ]; then
     . /etc/homebridge.conf
 else
@@ -276,128 +283,120 @@ else
     exit 1
 fi
 
-
-
-start_service() {
-
+# ==============================================================================
+# START FUNCTION
+# FLOW: Wait Mount -> Verify Config -> Kill Run -> Force Delete -> Recreate -> Start
+# ==============================================================================
+start() {
     logger -t homebridge_init "Waiting for $TARGET_MOUNT to become available..."
 
-
     for i in $(seq 1 30); do
-
         if grep -qs " $TARGET_MOUNT " /proc/mounts; then
-
             logger -t homebridge_init "$TARGET_MOUNT mounted successfully on loop $i."
             break
-
         fi
-
         sleep 1
-
     done
 
-
-
     if ! grep -qs " $TARGET_MOUNT " /proc/mounts; then
-
         logger -t homebridge_init "[CRITICAL ERROR] $TARGET_MOUNT failed to mount."
         return 1
-
     fi
-
-
 
     if [ ! -f "$BUNDLE_PATH/config.json" ]; then
-
         logger -t homebridge_init "[CRITICAL ERROR] Missing config.json."
         return 1
-
     fi
 
+    # 1. Kill and Force Delete any existing/stale runtime registration
+    logger -t homebridge_init "Clearing existing container registrations..."
+    /sbin/uxc kill "$CONTAINER_NAME" >/dev/null 2>&1 || true
+    /sbin/uxc delete "$CONTAINER_NAME" --force >/dev/null 2>&1 || true
 
-
-    logger -t homebridge_init "Cleaning previous UXC state..."
-
-    /sbin/uxc kill "$CONTAINER_NAME" >/dev/null 2>&1
-    /sbin/uxc delete "$CONTAINER_NAME" --force >/dev/null 2>&1
-
-
-
-    logger -t homebridge_init "Creating Homebridge UXC container..."
-
-
-    if /sbin/uxc create "$CONTAINER_NAME" \
-        --bundle "$BUNDLE_PATH" \
-        --mounts "$TARGET_MOUNT"; then
-
-
-        logger -t homebridge_init "UXC container created successfully."
-
-
-    else
-
-        logger -t homebridge_init "[CRITICAL ERROR] UXC create failed."
+    # 2. Re-register and compile the UXC container instance blueprint
+    logger -t homebridge_init "Registering UXC container instance..."
+    if ! /sbin/uxc create "$CONTAINER_NAME" --bundle "$BUNDLE_PATH" --mounts "$TARGET_MOUNT"; then
+        logger -t homebridge_init "[CRITICAL ERROR] UXC registration failed."
         return 1
-
     fi
 
+    sleep 1
 
+    # 3. Start the newly registered container
+    logger -t homebridge_init "Starting Homebridge..."
+    if ! /sbin/uxc start "$CONTAINER_NAME"; then
+        logger -t homebridge_init "[CRITICAL ERROR] Failed to start Homebridge container."
+        return 1
+    fi
 
-    sleep 3
-
-
-
-    procd_open_instance
-
-    procd_set_param command /sbin/uxc start "$CONTAINER_NAME"
-
-    procd_close_instance
-
-
-
-    logger -t homebridge_init "Homebridge startup command issued successfully."
-
+    logger -t homebridge_init "Homebridge started successfully."
 }
 
+# ==============================================================================
+# STOP FUNCTION
+# FLOW: Send SIGTERM -> Verify Exit -> Fallback Force SIGKILL
+# NOTE: Does NOT execute delete so status command remains queryable!
+# ==============================================================================
+stop() {
+    logger -t homebridge_init "Stopping Homebridge gracefully..."
+    
+    # 1. Send SIGTERM (Signal 15) first to allow graceful shutdown of accessories
+    /sbin/uxc kill "$CONTAINER_NAME" >/dev/null 2>&1
+    
+    # Poll state for up to 3 seconds to see if container stops gracefully
+    for i in 1 2 3; do
+        JSON=$(/sbin/uxc state "$CONTAINER_NAME" 2>/dev/null)
+        STATUS=$(echo "$JSON" | jq -r '.status' 2>/dev/null)
+        
+        if [ "$STATUS" != "running" ]; then
+            logger -t homebridge_init "Homebridge stopped cleanly."
+            return 0
+        fi
+        sleep 1
+    done
 
-
-stop_service() {
-
-    logger -t homebridge_init "Stopping Homebridge..."
-
-    /sbin/uxc kill "$CONTAINER_NAME" --signal TERM >/dev/null 2>&1
-
+    # 2. Escalate to SIGKILL (Signal 9) if the container refuses to exit within 3s
+    logger -t homebridge_init "[WARNING] Homebridge ignored SIGTERM. Force killing (SIGKILL)..."
+    /sbin/uxc kill "$CONTAINER_NAME" --signal KILL >/dev/null 2>&1
+    
+    sleep 1
+    logger -t homebridge_init "Homebridge force stopped."
 }
 
+# ==============================================================================
+# RESTART FUNCTION
+# rc.common maps restart to stop() then start() automatically.
+# FLOW (Combined): Grace/Force Stop -> Wait Mount -> Verify -> Kill -> Force Delete -> Recreate -> Start
+# ==============================================================================
 
-
+# ==============================================================================
+# STATUS FUNCTION
+# FLOW: Extract state metadata JSON -> Parse runtime status -> Output status string
+# ==============================================================================
 status() {
-
     if [ -x /sbin/uxc ]; then
-
-        STATUS=$(/sbin/uxc state "$CONTAINER_NAME" 2>/dev/null)
-
-        echo "$STATUS"
-
+        JSON=$(/sbin/uxc state "$CONTAINER_NAME" 2>/dev/null)
+        if [ -n "$JSON" ]; then
+            # Output status to stdout (e.g. "running" or "stopped")
+            echo "$JSON" | jq -r '.status'
+            
+            # Return shell exit code (0 if running, 1 if stopped)
+            echo "$JSON" | jq -e '.status=="running"' >/dev/null 2>&1
+            return $?
+        fi
+        echo "stopped"
+        return 1
     else
-
-        echo "Error: /sbin/uxc not found."
-
+        echo "error: /sbin/uxc missing"
+        return 1
     fi
-
 }
-
 EOF
 
-
 chmod +x /etc/init.d/homebridge
-
-
 /etc/init.d/homebridge enable
 
-
-echo "✅ Persistent Homebridge procd service installed."
-
+echo "✅ Persistent Homebridge service installed."
 echo "========(+) DONE ✅ (+)========"
 printf '\n\n\n'
 
