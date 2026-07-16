@@ -12,34 +12,60 @@ LABEL org.opencontainers.image.title="openwrt-uxc-homebridge" \
 
 # ==========================================================
 # System dependencies
-# (nodejs and npm are inherently provided by the base image)
-# 
-# Notes on compilation tools:
-# - git: Required by npm to install beta plugins or dependencies hosted directly on GitHub URLs.
-# - linux-headers: Required by node-gyp to compile native C/C++ plugins that need kernel/hardware access (e.g., Bluetooth BLE, raw network sockets).
-# - python3, make, g++: Standard node-gyp requirements for compiling native modules.
 # ==========================================================
-RUN apk update && apk upgrade \
- && apk add --no-cache \
+RUN apk add --no-cache \
+    # ------------------------------------------------------
+    # 1. MANDATORY CORE RUNTIME (Do not remove)
+    # ------------------------------------------------------
     tzdata \
+    # Required to map timezones accurately so scheduled automations run on time.
     ca-certificates \
+    # Required for secure HTTPS outgoing connections to cloud APIs (e.g., Tuya, Ring).
     avahi-compat-libdns_sd \
+    # Required for mDNS/Bonjour advertising so Apple Home can discover Homebridge.
     libstdc++ \
+    # Required by Node.js and various pre-compiled binary modules.
+    \
+    # ------------------------------------------------------
+    # 2. OPTIONAL RUNTIME ENHANCEMENTS (Remove to shrink)
+    # ------------------------------------------------------
     curl \
+    # Useful for script health checks and local diagnostics. [~1.5 MB]
     ffmpeg \
+    # Critical for camera/video processing plugins (e.g., Ring, Nest, RTSP streams). 
+    # If you do not run camera streams inside Homebridge, you can safely remove this. [~40-50 MB]
+    \
+    # ------------------------------------------------------
+    # 3. BUILD / COMPILATION TOOLS (Remove to shrink, but affects C/C++ builds)
+    #
+    # If you delete this group, you will shrink the image footprint 
+    # by roughly ~100MB. However, you will no longer be able to 
+    # install plugins that compile native C/C++ modules on the fly 
+    # (e.g., Bluetooth/BLE trackers, Zigbee local USB drivers, or 
+    # raw network socket controllers).
+    # ------------------------------------------------------
     python3 \
+    # Required by node-gyp as the build system orchestrator. [~45 MB]
     make \
+    # Standard GNU utility used to build and compile code from source. [~0.5 MB]
     g++ \
+    # The GNU C++ Compiler used to compile native C++ plugins. [~35 MB]
     git \
+    # Required by npm to pull and install plugins hosted directly on GitHub URLs. [~7 MB]
     linux-headers
+    # Provides Linux kernel headers required for compiling native drivers. [~5 MB]
 
 # ==========================================================
-# CRITICAL FIX:
-# Ensure deterministic npm global install location
-# (prevents “missing package.json” / wrong prefix issues)
+# Runtime environment & npm configuration
 # ==========================================================
 ENV NPM_CONFIG_PREFIX=/usr/local \
-    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
+    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin \
+    HOME=/var/lib/homebridge \
+    TZ=UTC \
+    NODE_ENV=production \
+    NPM_CONFIG_CACHE=/var/lib/homebridge/.npm-cache \
+    NPM_CONFIG_TMP=/var/lib/homebridge/.npm-tmp \
+    HOMEBRIDGE_CONFIG_UI=1
 
 RUN npm config set prefix /usr/local \
  && npm config set update-notifier false \
@@ -47,31 +73,24 @@ RUN npm config set prefix /usr/local \
  && npm config set fund false
 
 # ==========================================================
-# Install Homebridge stack
+# Install Homebridge
 # ==========================================================
-RUN npm install -g --unsafe-perm \
+RUN npm install -g \
+    --unsafe-perm \
     homebridge@${HOMEBRIDGE_VERSION} \
     homebridge-config-ui-x@${CONFIG_UI_VERSION} \
  && npm cache clean --force
 
 # ==========================================================
-# HARD VALIDATION (fail fast if install breaks)
+# Validate installation
 # ==========================================================
 RUN set -eux; \
     test -f /usr/local/lib/node_modules/homebridge/package.json; \
     test -f /usr/local/lib/node_modules/homebridge-config-ui-x/package.json; \
-    node -e "console.log('Node.js Version:', process.version)"; \
-    node -e "console.log('Homebridge OK:', require('/usr/local/lib/node_modules/homebridge/package.json').version)"; \
-    node -e "console.log('UI OK:', require('/usr/local/lib/node_modules/homebridge-config-ui-x/package.json').version)"
-
-# ==========================================================
-# Runtime environment
-# ==========================================================
-ENV HOME=/var/lib/homebridge \
-    TZ=UTC \
-    NODE_ENV=production \
-    NPM_CONFIG_CACHE=/var/lib/homebridge/.npm-cache \
-    NPM_CONFIG_TMP=/var/lib/homebridge/.npm-tmp \
-    HOMEBRIDGE_CONFIG_UI=1
+    node --version; \
+    npm --version; \
+    homebridge --version; \
+    node -e "console.log(require('/usr/local/lib/node_modules/homebridge/package.json').version)"; \
+    node -e "console.log(require('/usr/local/lib/node_modules/homebridge-config-ui-x/package.json').version)"
 
 WORKDIR /var/lib/homebridge
