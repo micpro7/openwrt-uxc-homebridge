@@ -6,6 +6,7 @@ By leveraging native user-space **UXC (User Containers)** instead of resource-he
 
 ## 🛠️ Architecture & Data Flow
 This project is split into three main components to ensure clean execution, hardware safety, and robust service lifecycle management:
+```
                   ┌────────────────────────────────────┐
                   │      GitHub Actions CI Pipeline    │
                   │   (alpine:3.22 + node:24 + arm64)  │
@@ -31,6 +32,7 @@ This project is split into three main components to ensure clean execution, hard
                   │   - 256MB Node RAM constraint      │
                   │   - External SSD directory mounts  │
                   └────────────────────────────────────┘
+```
 
 ## ✨ Key Technical Highlights
  * **💾 External Storage Protection (Zero Flash Wear):** Installs and maps all heavy filesystems straight to your external SSD (/mnt/SSD/UXC/homebridge) via high-performance rbind mount points. This fully insulates your router's internal flash storage from write-wear.
