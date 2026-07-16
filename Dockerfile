@@ -11,9 +11,9 @@ LABEL org.opencontainers.image.title="openwrt-uxc-homebridge" \
       org.opencontainers.image.source="https://github.com/micpro7/openwrt-uxc-homebridge"
 
 # ==========================================================
-# System dependencies
+# System dependencies (Upgraded & Patched)
 # ==========================================================
-RUN apk add --no-cache \
+RUN apk update && apk upgrade --no-cache && apk add --no-cache \
     # ------------------------------------------------------
     # 1. MANDATORY CORE RUNTIME (Do not remove)
     # ------------------------------------------------------
@@ -86,7 +86,8 @@ ENV NPM_CONFIG_PREFIX=/usr/local \
 RUN npm config set prefix /usr/local \
  && npm config set update-notifier false \
  && npm config set audit false \
- && npm config set fund false
+ && npm config set fund false \
+ && npm config set prefer-offline true
 
 # ==========================================================
 # Install Homebridge
