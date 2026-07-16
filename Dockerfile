@@ -25,6 +25,8 @@ RUN apk add --no-cache \
     # Required for mDNS/Bonjour advertising so Apple Home can discover Homebridge.
     libstdc++ \
     # Required by Node.js and various pre-compiled binary modules.
+    sudo \
+    # Required by Homebridge Config UI-X's hardcoded setup execution.
     \
     # ------------------------------------------------------
     # 2. OPTIONAL RUNTIME ENHANCEMENTS (Remove to shrink)
@@ -54,6 +56,13 @@ RUN apk add --no-cache \
     # Required by npm to pull and install plugins hosted directly on GitHub URLs. [~7 MB]
     linux-headers
     # Provides Linux kernel headers required for compiling native drivers. [~5 MB]
+
+# ==========================================================
+# CRITICAL: Configure sudo to preserve NPM environment variables
+# (Prevents sudo from stripping cache and path environments)
+# ==========================================================
+RUN echo "root ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/homebridge \
+ && echo "Defaults env_keep += \"NPM_CONFIG_CACHE NPM_CONFIG_TMP HOME NODE_ENV PATH\"" >> /etc/sudoers.d/homebridge
 
 # ==========================================================
 # Runtime environment & npm configuration
