@@ -54,7 +54,7 @@ jobs:
             .
 
       # ==========================================================
-      # STEP 2: Assemble OCI bundle
+      # STEP 2: Assemble OCI bundle (Preserving correct UID/GID maps)
       # ==========================================================
       - name: Assemble bundle
         run: |
@@ -62,15 +62,16 @@ jobs:
 
           mkdir -p bundle/rootfs
 
-          # Extract image filesystem (using -p to preserve permissions and ownership)
-          tar -xpf rootfs.tar -C bundle/rootfs
+          # Extract image filesystem using sudo to preserve root (UID 0), 
+          # homebridge (UID 10001) ownerships, and the critical sudo SetUID bits.
+          sudo tar -xpf rootfs.tar -C bundle/rootfs
           rm -f rootfs.tar
 
-          # Strip unnecessary files
-          rm -rf bundle/rootfs/usr/share/man \
-                 bundle/rootfs/usr/share/doc \
-                 bundle/rootfs/var/cache/apk/* \
-                 bundle/rootfs/tmp/*
+          # Strip unnecessary files (using sudo since files are owned by root/10001)
+          sudo rm -rf bundle/rootfs/usr/share/man \
+                      bundle/rootfs/usr/share/doc \
+                      bundle/rootfs/var/cache/apk/* \
+                      bundle/rootfs/tmp/*
 
           # Copy config
           cp ./config.json bundle/config.json
@@ -85,7 +86,11 @@ jobs:
           test -x bundle/rootfs/usr/local/bin/node
 
           # Create final bundle (Preserving original non-root user UID/GID 10001)
-          tar -czf homebridge-arm64.tar.gz -C bundle .
+          # Using sudo allows tar to read and pack the root-owned files.
+          sudo tar -czf homebridge-arm64.tar.gz -C bundle .
+
+          # Reclaim ownership of the output archive so runner can publish it
+          sudo chown $(id -u):$(id -g) homebridge-arm64.tar.gz
 
       # ==========================================================
       # STEP 3: Minimal sanity check
