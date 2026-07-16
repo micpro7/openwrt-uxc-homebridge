@@ -54,7 +54,7 @@ jobs:
             .
 
       # ==========================================================
-      # STEP 2: Assemble OCI bundle (Preserving correct UID/GID maps)
+      # STEP 2: Assemble OCI bundle
       # ==========================================================
       - name: Assemble bundle
         run: |
@@ -62,12 +62,11 @@ jobs:
 
           mkdir -p bundle/rootfs
 
-          # Extract image filesystem using sudo to preserve root (UID 0), 
-          # homebridge (UID 10001) ownerships, and the critical sudo SetUID bits.
+          # Extract image filesystem (using -p to preserve permissions and ownership)
           sudo tar -xpf rootfs.tar -C bundle/rootfs
           rm -f rootfs.tar
 
-          # Strip unnecessary files (using sudo since files are owned by root/10001)
+          # Strip unnecessary files
           sudo rm -rf bundle/rootfs/usr/share/man \
                       bundle/rootfs/usr/share/doc \
                       bundle/rootfs/var/cache/apk/* \
@@ -79,14 +78,13 @@ jobs:
           # Validate config
           python3 -m json.tool bundle/config.json > /dev/null
 
-          # DEBUG: Verify Node location
-          find bundle/rootfs -name node
+          # DEBUG: Verify Node location (using sudo to avoid permission denied crashes)
+          sudo find bundle/rootfs -name node
 
-          # Validate runtime exists at /usr/local/bin/node (Alpine/Node image path)
-          test -x bundle/rootfs/usr/local/bin/node
+          # Validate runtime exists at /usr/local/bin/node (using sudo to read root-owned directories)
+          sudo test -x bundle/rootfs/usr/local/bin/node
 
           # Create final bundle (Preserving original non-root user UID/GID 10001)
-          # Using sudo allows tar to read and pack the root-owned files.
           sudo tar -czf homebridge-arm64.tar.gz -C bundle .
 
           # Reclaim ownership of the output archive so runner can publish it
@@ -137,7 +135,7 @@ jobs:
             - Configured to run securely as a non-root user (UID/GID 10001)
             - Setup directories are pre-owned by the low-privilege 'homebridge' user
             - Sudo environment variables are preserved for NPM configuration stability
-            - Configured with `NODE_OPTIONS="--max-old-space-size=150"` to prevent OOM termination on devices running under a strict 256MB RAM limit
+            - Configured with `NODE_OPTIONS="--max-old-space-size=256"` to prevent OOM termination on devices running under strict constraints (e.g 1GB RAM)
             - No dependency inspection is done on GitHub runner
             - Bundle is purely filesystem-based OCI export with preserved permissions
 
