@@ -62,7 +62,7 @@ jobs:
 
           mkdir -p bundle/rootfs
 
-          # Extract image filesystem
+          # Extract image filesystem (using -p to preserve permissions and ownership)
           tar -xpf rootfs.tar -C bundle/rootfs
           rm -f rootfs.tar
 
@@ -84,8 +84,8 @@ jobs:
           # Validate runtime exists at /usr/local/bin/node (Alpine/Node image path)
           test -x bundle/rootfs/usr/local/bin/node
 
-          # Create final bundle (Force Root Ownership)
-          tar --owner=0 --group=0 -czf homebridge-arm64.tar.gz -C bundle .
+          # Create final bundle (Preserving original non-root user UID/GID 10001)
+          tar -czf homebridge-arm64.tar.gz -C bundle .
 
       # ==========================================================
       # STEP 3: Minimal sanity check
@@ -129,8 +129,12 @@ jobs:
             DESIGN NOTES
             -----------------------------
             - Homebridge is installed inside Docker image only
+            - Configured to run securely as a non-root user (UID/GID 10001)
+            - Setup directories are pre-owned by the low-privilege 'homebridge' user
+            - Sudo environment variables are preserved for NPM configuration stability
+            - Configured with `NODE_OPTIONS="--max-old-space-size=150"` to prevent OOM termination on devices running under a strict 256MB RAM limit
             - No dependency inspection is done on GitHub runner
-            - Bundle is purely filesystem-based OCI export
+            - Bundle is purely filesystem-based OCI export with preserved permissions
 
             -----------------------------
             BUILD INFO
