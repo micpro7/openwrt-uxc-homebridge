@@ -1,5 +1,3 @@
-Here is the definitive, highly accurate **README.md** compiled directly from your complete codebase (build-release.yml, the non-root Node 24 Dockerfile, the UXC OCI config.json, and the install.sh master script).
-It is structured to highlight your engineering decisions, from SSD protection to your custom procd supervisor daemon.
 # OpenWrt UXC Homebridge 🍏🤖
 Build Homebridge UXC Bundle
 An enterprise-grade, high-performance **Homebridge** distribution engineered natively for **OpenWrt** platforms.
