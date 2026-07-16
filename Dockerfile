@@ -93,4 +93,11 @@ RUN set -eux; \
     node -e "console.log(require('/usr/local/lib/node_modules/homebridge/package.json').version)"; \
     node -e "console.log(require('/usr/local/lib/node_modules/homebridge-config-ui-x/package.json').version)"
 
+# ==========================================================
+# Directory Setup & Target Working Directory
+# ==========================================================
+RUN mkdir -p /var/lib/homebridge/.npm-cache \
+             /var/lib/homebridge/.npm-tmp \
+             /var/lib/homebridge/plugins
+
 WORKDIR /var/lib/homebridge
