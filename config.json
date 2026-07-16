@@ -6,18 +6,19 @@
     "org.opencontainers.image.description": "Homebridge deployment for OpenWrt using native UXC containers",
     "org.opencontainers.image.source": "https://github.com/micpro7/openwrt-uxc-homebridge",
     "io.homebridge.plugin-path": "/var/lib/homebridge/plugins",
-    "io.homebridge.storage-path": "/var/lib/homebridge"
+    "io.homebridge.storage-path": "/var/lib/homebridge",
+    "_comment_uid_decision": "We run the container process under UID:GID 0 (root). Why? This eliminates native NPM compile failures, permissions collisions with external SSD bind mounts, and socket-binding restrictions. Because UXC lacks CAP_SYS_ADMIN, has a read-only rootfs, and is sandboxed by OpenWrt's procd-ujail namespaces, a 'root' user here is completely isolated from the main host router."
   },
   "process": {
     "terminal": false,
     "user": {
-      "uid": 10001,
-      "gid": 10001
+      "uid": 0,
+      "gid": 0
     },
     "args": [
       "/bin/sh",
       "-c",
-      "while true; do /usr/local/bin/hb-service run -U /var/lib/homebridge -P /var/lib/homebridge/plugins; echo 'Homebridge crashed - restarting in 3s'; sleep 3; done"
+      "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/plugins; echo 'Homebridge crashed - restarting in 3s'; sleep 3; done"
     ],
     "env": [
       "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
