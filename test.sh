@@ -32,7 +32,7 @@ PERSISTENT_DATA_SOURCE="$TARGET_MOUNT/UXC/$CONTAINER_NAME/data"
 # ==============================================================================
 TIMEZONE="Europe/London"                   # Local system timezone
 MDNS_NET_INTERFACE="br-lan"                # Interface for Homebridge mDNS broadcasts
-NODE_MEMORY_LIMIT="160"                    # Max Node.js heap memory limit in MB
+NODE_MEMORY_LIMIT="192"                    # Max Node.js heap memory limit in MB
 THREAD_POOL_SIZE="4"                       # Number of Libuv worker threads
 BIND_IP="0.0.0.0"                          # Binding address for Homebridge UI
 
