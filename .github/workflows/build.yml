@@ -86,7 +86,10 @@ jobs:
           sudo test -x bundle/rootfs/usr/local/bin/node
 
           # Create final bundle (Preserving standard root execution environment permissions)
-          sudo tar -czf homebridge-arm64.tar.gz -C bundle .
+          # We pack config.json and rootfs explicitly from inside the bundle folder
+          cd bundle
+          sudo tar -czf ../homebridge-arm64.tar.gz config.json rootfs
+          cd ..
 
           # Reclaim ownership of the output archive so runner can publish it
           sudo chown $(id -u):$(id -g) homebridge-arm64.tar.gz
