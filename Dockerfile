@@ -79,7 +79,6 @@ ENV NPM_CONFIG_PREFIX=/usr/local \
 
 RUN npm config set prefix /usr/local \
  && npm config set cache /var/lib/homebridge/.npm-cache \
- && npm config set tmp /var/lib/homebridge/.npm-tmp \
  && npm config set update-notifier false \
  && npm config set audit false \
  && npm config set fund false
