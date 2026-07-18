@@ -18,26 +18,48 @@ RUN apk add --no-cache \
     # 1. MANDATORY CORE RUNTIME (Do not remove)
     # ------------------------------------------------------
     tzdata \
+    # Required to map timezones accurately so scheduled automations run on time.
     ca-certificates \
+    # Required for secure HTTPS outgoing connections to cloud APIs (e.g., Tuya, Ring).
     avahi-compat-libdns_sd \
+    # Required for mDNS/Bonjour advertising so Apple Home can discover Homebridge.
     libstdc++ \
+    # Required by Node.js and various pre-compiled binary modules.
     sudo \
+    # Required by Homebridge Config UI-X's hardcoded setup execution.
+    \
     # ------------------------------------------------------
     # 2. OPTIONAL RUNTIME ENHANCEMENTS (Remove to shrink)
     # ------------------------------------------------------
     curl \
+    # Useful for script health checks and local diagnostics. [~1.5 MB]
     ffmpeg \
+    # Critical for camera/video processing plugins (e.g., Ring, Nest, RTSP streams). 
+    # If you do not run camera streams inside Homebridge, you can safely remove this. [~40-50 MB]
+    \
     # ------------------------------------------------------
     # 3. BUILD / COMPILATION TOOLS (Remove to shrink, but affects C/C++ builds)
+    #
+    # If you delete this group, you will shrink the image footprint 
+    # by roughly ~100MB. However, you will no longer be able to 
+    # install plugins that compile native C/C++ modules on the fly 
+    # (e.g., Bluetooth/BLE trackers, Zigbee local USB drivers, or 
+    # raw network socket controllers).
     # ------------------------------------------------------
     python3 \
+    # Required by node-gyp as the build system orchestrator. [~45 MB]
     make \
+    # Standard GNU utility used to build and compile code from source. [~0.5 MB]
     g++ \
+    # The GNU C++ Compiler used to compile native C++ plugins. [~35 MB]
     git \
+    # Required by npm to pull and install plugins hosted directly on GitHub URLs. [~7 MB]
     linux-headers
+    # Provides Linux kernel headers required for compiling native drivers. [~5 MB]
 
 # ==========================================================
 # CRITICAL: Configure sudo to preserve NPM environment variables
+# (Prevents sudo from stripping cache and path environments)
 # ==========================================================
 RUN echo "root ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/homebridge \
  && echo "Defaults env_keep += \"NPM_CONFIG_CACHE NPM_CONFIG_TMP HOME NODE_ENV PATH\"" >> /etc/sudoers.d/homebridge
