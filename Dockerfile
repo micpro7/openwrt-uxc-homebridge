@@ -57,12 +57,14 @@ RUN apk add --no-cache \
 
 # ==========================================================
 # CRITICAL: Configure sudo to preserve NPM environment variables
+# (Prevents sudo from stripping cache and path environments)
 # ==========================================================
 RUN echo "root ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/homebridge \
  && echo "Defaults env_keep += \"NPM_CONFIG_CACHE NPM_CONFIG_TMP HOME NODE_ENV PATH\"" >> /etc/sudoers.d/homebridge
 
 # ==========================================================
 # Runtime environment & npm configuration
+# STABILITY RESTORATION: Matches v3's isolated /root environment
 # ==========================================================
 ENV NPM_CONFIG_PREFIX=/usr/local \
     PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin \
@@ -98,16 +100,9 @@ RUN set -eux; \
     node -e "console.log(require('/usr/local/lib/node_modules/homebridge-config-ui-x/package.json').version)"
 
 # ==========================================================
-# Health Check
-# ==========================================================
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \
-    CMD homebridge --version >/dev/null || exit 1
-
-# ==========================================================
-# Directory Setup
+# Directory Setup & Target Working Directory
 # ==========================================================
 RUN mkdir -p \
-    /var/lib/homebridge \
     /var/lib/homebridge/accessories \
     /var/lib/homebridge/backups \
     /var/lib/homebridge/persist \
@@ -115,15 +110,12 @@ RUN mkdir -p \
 
 WORKDIR /var/lib/homebridge
 
-# Persistent Homebridge data
-VOLUME ["/var/lib/homebridge"]
-
 # Homebridge Config UI X
 EXPOSE 8581
 
 # ==========================================================
 # Container Startup
 # ==========================================================
-ENTRYPOINT ["/sbin/tini","--"]
+ENTRYPOINT ["/sbin/tini", "--"]
 
 CMD ["homebridge"]
