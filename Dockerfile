@@ -39,12 +39,6 @@ RUN apk add --no-cache \
     \
     # ------------------------------------------------------
     # 3. BUILD / COMPILATION TOOLS (Remove to shrink, but affects C/C++ builds)
-    #
-    # If you delete this group, you will shrink the image footprint 
-    # by roughly ~100MB. However, you will no longer be able to 
-    # install plugins that compile native C/C++ modules on the fly 
-    # (e.g., Bluetooth/BLE trackers, Zigbee local USB drivers, or 
-    # raw network socket controllers).
     # ------------------------------------------------------
     python3 \
     # Required by node-gyp as the build system orchestrator. [~45 MB]
@@ -66,19 +60,16 @@ RUN echo "root ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/homebridge \
 
 # ==========================================================
 # Runtime environment & npm configuration
-# SSD OPTIMIZATION: Binds execution spaces directly to write-cached storage
+# STABILITY RESTORATION: Matches v3's isolated /root environment
 # ==========================================================
 ENV NPM_CONFIG_PREFIX=/usr/local \
     PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin \
-    HOME=/var/lib/homebridge \
+    HOME=/root \
     TZ=UTC \
     NODE_ENV=production \
-    NPM_CONFIG_CACHE=/var/lib/homebridge/.npm-cache \
-    NPM_CONFIG_TMP=/var/lib/homebridge/.npm-tmp \
     HOMEBRIDGE_CONFIG_UI=1
 
 RUN npm config set prefix /usr/local \
- && npm config set cache /var/lib/homebridge/.npm-cache \
  && npm config set update-notifier false \
  && npm config set audit false \
  && npm config set fund false
@@ -107,8 +98,6 @@ RUN set -eux; \
 # ==========================================================
 # Directory Setup & Target Working Directory
 # ==========================================================
-RUN mkdir -p /var/lib/homebridge/.npm-cache \
-             /var/lib/homebridge/.npm-tmp \
-             /var/lib/homebridge/plugins
+RUN mkdir -p /var/lib/homebridge/plugins
 
 WORKDIR /var/lib/homebridge
