@@ -66,7 +66,7 @@ RUN echo "root ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/homebridge \
 
 # ==========================================================
 # Runtime environment & npm configuration
-# Standard /usr/local core layout remains pristine
+# SSD OPTIMIZATION: Binds execution spaces directly to write-cached storage
 # ==========================================================
 ENV NPM_CONFIG_PREFIX=/usr/local \
     PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin \
@@ -78,6 +78,8 @@ ENV NPM_CONFIG_PREFIX=/usr/local \
     HOMEBRIDGE_CONFIG_UI=1
 
 RUN npm config set prefix /usr/local \
+ && npm config set cache /var/lib/homebridge/.npm-cache \
+ && npm config set tmp /var/lib/homebridge/.npm-tmp \
  && npm config set update-notifier false \
  && npm config set audit false \
  && npm config set fund false
