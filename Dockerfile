@@ -66,10 +66,10 @@ RUN echo "root ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/homebridge \
 
 # ==========================================================
 # Runtime environment & npm configuration
-# ROUTING FIX: Move prefix to persistent volume path
+# Standard /usr/local core layout remains pristine
 # ==========================================================
-ENV NPM_CONFIG_PREFIX=/var/lib/homebridge/plugins \
-    PATH=/var/lib/homebridge/plugins/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin \
+ENV NPM_CONFIG_PREFIX=/usr/local \
+    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin \
     HOME=/var/lib/homebridge \
     TZ=UTC \
     NODE_ENV=production \
@@ -77,13 +77,13 @@ ENV NPM_CONFIG_PREFIX=/var/lib/homebridge/plugins \
     NPM_CONFIG_TMP=/var/lib/homebridge/.npm-tmp \
     HOMEBRIDGE_CONFIG_UI=1
 
-RUN npm config set prefix /var/lib/homebridge/plugins \
+RUN npm config set prefix /usr/local \
  && npm config set update-notifier false \
  && npm config set audit false \
  && npm config set fund false
 
 # ==========================================================
-# Install core Homebridge (These remain in base image layers)
+# Install Homebridge
 # ==========================================================
 RUN npm install -g \
     --unsafe-perm \
@@ -95,11 +95,13 @@ RUN npm install -g \
 # Validate installation
 # ==========================================================
 RUN set -eux; \
-    test -f /var/lib/homebridge/plugins/lib/node_modules/homebridge/package.json; \
-    test -f /var/lib/homebridge/plugins/lib/node_modules/homebridge-config-ui-x/package.json; \
+    test -f /usr/local/lib/node_modules/homebridge/package.json; \
+    test -f /usr/local/lib/node_modules/homebridge-config-ui-x/package.json; \
     node --version; \
     npm --version; \
-    /var/lib/homebridge/plugins/bin/homebridge --version
+    homebridge --version; \
+    node -e "console.log(require('/usr/local/lib/node_modules/homebridge/package.json').version)"; \
+    node -e "console.log(require('/usr/local/lib/node_modules/homebridge-config-ui-x/package.json').version)"
 
 # ==========================================================
 # Directory Setup & Target Working Directory
