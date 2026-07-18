@@ -155,7 +155,7 @@ jobs:
             - Configured to run securely as a non-root user (UID/GID 10001)
             - Setup directories are pre-owned by the low-privilege 'homebridge' user
             - Sudo environment variables are preserved for NPM configuration stability
-            - Configured with `NODE_OPTIONS="--max-old-space-size=256"` to prevent OOM termination on devices running under strict constraints (e.g 1GB RAM)
+            - Configured with `NODE_OPTIONS="--max-old-space-size=128"` to prevent OOM termination on devices running under strict constraints (e.g 1GB RAM)
             - No dependency inspection is done on GitHub runner
             - Bundle is purely filesystem-based OCI export with preserved permissions
 
