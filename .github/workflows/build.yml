@@ -18,7 +18,7 @@ on:
     paths:
       - "Dockerfile"
       - "config.json"
-      - ".github/workflows/build.yml"
+      - ".github/workflows/build-release.yml"
 
 permissions:
   contents: write
@@ -55,7 +55,7 @@ jobs:
             .
 
       # ==========================================================
-      # STEP 2: Assemble OCI bundle
+      # STEP 2: Assemble OCI bundle (Strict Root Execution UID 0)
       # ==========================================================
       - name: Assemble bundle
         run: |
@@ -63,7 +63,7 @@ jobs:
 
           mkdir -p bundle/rootfs
 
-          # Extract image filesystem (using -p to preserve permissions and ownership)
+          # Extract image filesystem (using -p to preserve explicit root permissions and ownership)
           sudo tar -xpf rootfs.tar -C bundle/rootfs
           rm -f rootfs.tar
 
@@ -79,13 +79,13 @@ jobs:
           # Validate config
           python3 -m json.tool bundle/config.json > /dev/null
 
-          # DEBUG: Verify Node location (using sudo to avoid permission denied crashes)
+          # DEBUG: Verify Node location
           sudo find bundle/rootfs -name node
 
-          # Validate runtime exists at /usr/local/bin/node (using sudo to read root-owned directories)
+          # Validate runtime exists at /usr/local/bin/node
           sudo test -x bundle/rootfs/usr/local/bin/node
 
-          # Create final bundle (Preserving original non-root user UID/GID 10001)
+          # Create final bundle (Preserving standard root execution environment permissions)
           sudo tar -czf homebridge-arm64.tar.gz -C bundle .
 
           # Reclaim ownership of the output archive so runner can publish it
@@ -120,7 +120,6 @@ jobs:
           fi
 
           # Extract Node and NPM versions securely by running a quick container execution
-          # (This avoids dynamic linker library issues with Alpine binaries on Ubuntu hosts)
           NODE_VERSION=$(docker run --rm --entrypoint node homebridge-build:local --version | tr -d 'v' | tr -d '\r')
           NPM_VERSION=$(docker run --rm --entrypoint npm homebridge-build:local --version | tr -d '\r')
           
@@ -152,8 +151,7 @@ jobs:
 
             ### ⚙️ Design Notes
             - Homebridge is installed inside Docker image only
-            - Configured to run securely as a non-root user (UID/GID 10001)
-            - Setup directories are pre-owned by the low-privilege 'homebridge' user
+            - Configured to run cleanly as root (UID 0) to support native OpenWrt UXC micro-container isolation
             - Sudo environment variables are preserved for NPM configuration stability
             - Configured with `NODE_OPTIONS="--max-old-space-size=128"` to prevent OOM termination on devices running under strict constraints (e.g 1GB RAM)
             - No dependency inspection is done on GitHub runner
