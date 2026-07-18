@@ -29,7 +29,7 @@ This project is split into three main components to ensure clean execution, hard
                   ┌────────────────────────────────────┐
                   │     UXC Container Environment      │
                   │   - Pre-built with non-root FS     │
-                  │   - 256MB Node RAM constraint      │
+                  │   - 128MB Node RAM constraint      │
                   │   - External SSD directory mounts  │
                   └────────────────────────────────────┘
 ```
