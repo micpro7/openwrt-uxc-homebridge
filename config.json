@@ -21,8 +21,9 @@
       "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/node_modules; echo 'Homebridge crashed - restarting in 3s'; sleep 3; done"
     ],
     "env": [
-      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-      "NODE_PATH=/var/lib/homebridge/node_modules",
+      "PATH=/var/lib/homebridge/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      "NPM_CONFIG_PREFIX=/var/lib/homebridge",
+      "NODE_PATH=/var/lib/homebridge/node_modules:/usr/local/lib/node_modules",
       "HOME=/var/lib/homebridge",
       "TERM=xterm",
       "TZ=UTC",
