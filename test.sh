@@ -217,6 +217,14 @@ jq --arg ip "HOMEBRIDGE_IP=$BIND_IP" \
 echo "   ↳ Network socket interface listening on: $BIND_IP ✅"
 
 
+# Split 6b: Update Web UI Binding Host
+jq --arg ui_host "HOMEBRIDGE_CONFIG_UI_HOST=$BIND_IP" \
+    '.process.env += [$ui_host]' \
+    "$BUNDLE_PATH/config.json" > "$BUNDLE_PATH/config.json.tmp" && mv "$BUNDLE_PATH/config.json.tmp" "$BUNDLE_PATH/config.json"
+
+echo "   ↳ Web UI socket host forced to: $BIND_IP ✅"
+
+
 # Split 7: Toggle Kernel Security Boundaries
 jq --argjson nnp "$NO_NEW_PRIVILEGES" \
     '.process.noNewPrivileges = $nnp' \
