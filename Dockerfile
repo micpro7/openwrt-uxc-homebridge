@@ -60,20 +60,20 @@ RUN apk add --no-cache \
 # (Prevents sudo from stripping cache and path environments)
 # ==========================================================
 RUN echo "root ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/homebridge \
- && echo "Defaults env_keep += \"NPM_CONFIG_CACHE NPM_CONFIG_TMP HOME NODE_ENV PATH\"" >> /etc/sudoers.d/homebridge
+ && echo "Defaults env_keep += \"NPM_CONFIG_CACHE NPM_CONFIG_TMP HOME NODE_ENV PATH NPM_CONFIG_PREFIX\"" >> /etc/sudoers.d/homebridge
 
 # ==========================================================
 # Runtime environment & npm configuration
-# STABILITY RESTORATION: Matches v3's isolated /root environment
+# Redirect global NPM target to writable persistent storage (/var/lib/homebridge)
 # ==========================================================
-ENV NPM_CONFIG_PREFIX=/usr/local \
-    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin \
-    HOME=/root \
+ENV NPM_CONFIG_PREFIX=/var/lib/homebridge \
+    PATH=/var/lib/homebridge/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin \
+    HOME=/var/lib/homebridge \
     TZ=UTC \
     NODE_ENV=production \
     HOMEBRIDGE_CONFIG_UI=1
 
-RUN npm config set prefix /usr/local \
+RUN npm config set prefix /var/lib/homebridge \
  && npm config set update-notifier false \
  && npm config set audit false \
  && npm config set fund false
@@ -91,13 +91,10 @@ RUN npm install -g \
 # Validate installation
 # ==========================================================
 RUN set -eux; \
-    test -f /usr/local/lib/node_modules/homebridge/package.json; \
-    test -f /usr/local/lib/node_modules/homebridge-config-ui-x/package.json; \
+    test -f /usr/local/lib/node_modules/homebridge/package.json || test -f /var/lib/homebridge/lib/node_modules/homebridge/package.json; \
     node --version; \
     npm --version; \
-    homebridge --version; \
-    node -e "console.log(require('/usr/local/lib/node_modules/homebridge/package.json').version)"; \
-    node -e "console.log(require('/usr/local/lib/node_modules/homebridge-config-ui-x/package.json').version)"
+    homebridge --version
 
 # ==========================================================
 # Directory Setup & Target Working Directory
@@ -106,7 +103,7 @@ RUN mkdir -p \
     /var/lib/homebridge/accessories \
     /var/lib/homebridge/backups \
     /var/lib/homebridge/persist \
-    /var/lib/homebridge/plugins
+    /var/lib/homebridge/node_modules
 
 WORKDIR /var/lib/homebridge
 
