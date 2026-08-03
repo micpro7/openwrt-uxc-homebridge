@@ -33,10 +33,10 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Setup Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@v3
 
       # ==========================================================
       # STEP 1: Build container rootfs (ALL software installed here)
@@ -45,12 +45,14 @@ jobs:
         run: |
           set -eux
 
+          HB_VER="${{ inputs.homebridge_version }}"
+          UI_VER="${{ inputs.config_ui_version }}"
+
           docker buildx build \
-            --build-arg HOMEBRIDGE_VERSION="${{ inputs.homebridge_version || 'latest' }}" \
-            --build-arg CONFIG_UI_VERSION="${{ inputs.config_ui_version || 'latest' }}" \
+            --build-arg HOMEBRIDGE_VERSION="${HB_VER:-latest}" \
+            --build-arg CONFIG_UI_VERSION="${UI_VER:-latest}" \
             --cache-from type=gha \
             --cache-to type=gha,mode=max \
-            --tag homebridge-build:local \
             --output type=tar,dest=rootfs.tar \
             .
 
@@ -63,7 +65,7 @@ jobs:
 
           mkdir -p bundle/rootfs
 
-          # Extract image filesystem (using -p to preserve explicit root permissions and ownership)
+          # Extract image filesystem preserving permissions
           sudo tar -xpf rootfs.tar -C bundle/rootfs
           rm -f rootfs.tar
 
@@ -79,19 +81,15 @@ jobs:
           # Validate config
           python3 -m json.tool bundle/config.json > /dev/null
 
-          # DEBUG: Verify Node location
-          sudo find bundle/rootfs -name node
-
-          # Validate runtime exists at /usr/local/bin/node
+          # Validate runtime exists
           sudo test -x bundle/rootfs/usr/local/bin/node
 
-          # Create final bundle (Preserving standard root execution environment permissions)
-          # We pack config.json and rootfs explicitly from inside the bundle folder
+          # Create final bundle
           cd bundle
           sudo tar -czf ../homebridge-arm64.tar.gz config.json rootfs
           cd ..
 
-          # Reclaim ownership of the output archive so runner can publish it
+          # Reclaim ownership
           sudo chown $(id -u):$(id -g) homebridge-arm64.tar.gz
 
       # ==========================================================
@@ -108,39 +106,37 @@ jobs:
           du -sh homebridge-arm64.tar.gz
 
       # ==========================================================
-      # STEP 4: Release
+      # STEP 4: Release Metadata Generation
       # ==========================================================
       - name: Determine Release Name and Details
         run: |
           set -eux
           CURRENT_DATE=$(date +'%Y-%m-%d')
           
-          # Extract Homebridge version from the uncompressed bundle filesystem
+          # Extract Homebridge version directly from rootfs
           if [ -f "bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json" ]; then
             HB_VERSION=$(grep -m 1 '"version"' bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json | awk -F'"' '{print $4}')
           else
             HB_VERSION="${{ inputs.homebridge_version || 'latest' }}"
           fi
 
-          # Extract Node and NPM versions securely by running a quick container execution
-          NODE_VERSION=$(docker run --rm --entrypoint node homebridge-build:local --version | tr -d 'v' | tr -d '\r')
-          NPM_VERSION=$(docker run --rm --entrypoint npm homebridge-build:local --version | tr -d '\r')
+          # Read Node & NPM version directly from package manifests or system files inside bundle
+          NODE_VERSION=$(grep -m 1 '"NODE_VERSION"' bundle/rootfs/etc/profile.d/* 2>/dev/null | cut -d'=' -f2 || echo "Unknown")
           
           # Calculate exact compressed bundle size
           BUNDLE_SIZE=$(du -sh homebridge-arm64.tar.gz | cut -f1)
 
-          # Export metrics directly to GITHUB_ENV for the release body
-          echo "RELEASE_NAME=Homebridge V${HB_VERSION}-${CURRENT_DATE}" >> $GITHUB_ENV
+          # Export metrics directly to GITHUB_ENV
+          echo "TAG_NAME=v${HB_VERSION}-${CURRENT_DATE}" >> $GITHUB_ENV
+          echo "RELEASE_NAME=Homebridge v${HB_VERSION} (${CURRENT_DATE})" >> $GITHUB_ENV
           echo "HB_VERSION=${HB_VERSION}" >> $GITHUB_ENV
-          echo "NODE_VERSION=${NODE_VERSION}" >> $GITHUB_ENV
-          echo "NPM_VERSION=${NPM_VERSION}" >> $GITHUB_ENV
           echo "BUNDLE_SIZE=${BUNDLE_SIZE}" >> $GITHUB_ENV
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ env.RELEASE_NAME }}
-          tag_name: latest
+          tag_name: ${{ env.TAG_NAME }}
           make_latest: true
           files: homebridge-arm64.tar.gz
           body: |
@@ -148,16 +144,14 @@ jobs:
             * **Release Version:** `Homebridge v${{ env.HB_VERSION }}`
             * **Compiled Asset Size:** `${{ env.BUNDLE_SIZE }}` (Uncompressed filesystem-based OCI export)
             * **Target Architecture:** `ARM64 (aarch64)`
-            * **Base Environment:** `Alpine 3.22` running `Node.js v${{ env.NODE_VERSION }}` and `NPM v${{ env.NPM_VERSION }}`
+            * **Base Environment:** `Alpine 3.22`
 
             ---
 
             ### ⚙️ Design Notes
             - Homebridge is installed inside Docker image only
             - Configured to run cleanly as root (UID 0) to support native OpenWrt UXC micro-container isolation
-            - Sudo environment variables are preserved for NPM configuration stability
-            - Configured with `NODE_OPTIONS="--max-old-space-size=128"` to prevent OOM termination on devices running under strict constraints (e.g 1GB RAM)
-            - No dependency inspection is done on GitHub runner
+            - Configured with `NODE_OPTIONS="--max-old-space-size=128"` to prevent OOM termination on low-RAM hardware
             - Bundle is purely filesystem-based OCI export with preserved permissions
 
             ---
