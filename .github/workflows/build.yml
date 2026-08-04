@@ -18,7 +18,7 @@ on:
     paths:
       - "Dockerfile"
       - "config.json"
-      - ".github/workflows/build-release.yml"
+      - ".github/workflows/build.yml"
 
 permissions:
   contents: write
@@ -33,31 +33,36 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # ==========================================================
-      # STEP 1: Build container rootfs (ALL software installed here)
+      # STEP 1: Build image and export raw rootfs tarball
       # ==========================================================
       - name: Build rootfs (Docker)
         run: |
           set -eux
 
-          HB_VER="${{ inputs.homebridge_version }}"
-          UI_VER="${{ inputs.config_ui_version }}"
-
+          # 1. Build local container image
           docker buildx build \
-            --build-arg HOMEBRIDGE_VERSION="${HB_VER:-latest}" \
-            --build-arg CONFIG_UI_VERSION="${UI_VER:-latest}" \
+            --platform linux/arm64 \
+            --tag homebridge-uxc:build \
+            --build-arg HOMEBRIDGE_VERSION="${{ inputs.homebridge_version || 'latest' }}" \
+            --build-arg CONFIG_UI_VERSION="${{ inputs.config_ui_version || 'latest' }}" \
             --cache-from type=gha \
             --cache-to type=gha,mode=max \
-            --output type=tar,dest=rootfs.tar \
+            --load \
             .
 
+          # 2. Export raw filesystem tarball using container export
+          CONTAINER_ID=$(docker create homebridge-uxc:build)
+          docker export "$CONTAINER_ID" > rootfs.tar
+          docker rm "$CONTAINER_ID"
+
       # ==========================================================
-      # STEP 2: Assemble OCI bundle (Strict Root Execution UID 0)
+      # STEP 2: Assemble OCI bundle
       # ==========================================================
       - name: Assemble bundle
         run: |
@@ -65,35 +70,54 @@ jobs:
 
           mkdir -p bundle/rootfs
 
-          # Extract image filesystem preserving permissions
-          sudo tar -xpf rootfs.tar -C bundle/rootfs
+          # Extract image filesystem forcing root (0:0) and preserving permissions
+          tar -xpf rootfs.tar -C bundle/rootfs --owner=0 --group=0 --numeric-owner --same-permissions
           rm -f rootfs.tar
 
-          # Strip unnecessary files to minimize UXC footprint
-          sudo rm -rf bundle/rootfs/usr/share/man \
-                      bundle/rootfs/usr/share/doc \
-                      bundle/rootfs/var/cache/apk/* \
-                      bundle/rootfs/tmp/*
+          # Strip unnecessary files
+          rm -rf bundle/rootfs/usr/share/man \
+                 bundle/rootfs/usr/share/doc \
+                 bundle/rootfs/var/cache/apk/* \
+                 bundle/rootfs/tmp/*
 
           # Copy config
           cp ./config.json bundle/config.json
 
-          # Validate config
+          # Validate config syntax and required OCI fields
           python3 -m json.tool bundle/config.json > /dev/null
+          python3 - <<'PY'
+          import json
+          c = json.load(open("bundle/config.json"))
+          required = ["ociVersion", "process", "root", "mounts"]
+          for k in required:
+              assert k in c, f"Missing OCI field: {k}"
+          print("OCI config OK")
+          PY
 
-          # Validate runtime exists
-          sudo test -x bundle/rootfs/usr/local/bin/node
+          # DEBUG: Verify Node location
+          find bundle/rootfs -name node
 
-          # Create final bundle
-          cd bundle
-          sudo tar -czf ../homebridge-arm64.tar.gz config.json rootfs
-          cd ..
+          # Validate runtime and core binaries exist
+          test -x bundle/rootfs/usr/local/bin/node
+          test -x bundle/rootfs/usr/local/bin/homebridge
+          test -x bundle/rootfs/usr/local/bin/hb-service
+          test -d bundle/rootfs/usr/local/lib/node_modules/homebridge
+          test -d bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x
 
-          # Reclaim ownership
-          sudo chown $(id -u):$(id -g) homebridge-arm64.tar.gz
+          # Explicitly ensure setuid bit on sudo before packaging
+          chmod 4755 bundle/rootfs/usr/bin/sudo 2>/dev/null || true
+
+          # Create final bundle with strict root ownership & preserved permissions
+          tar \
+            --numeric-owner \
+            --owner=0 \
+            --group=0 \
+            --same-permissions \
+            -czf homebridge-arm64.tar.gz \
+            -C bundle .
 
       # ==========================================================
-      # STEP 3: Minimal sanity check
+      # STEP 3: Minimal sanity check & contents review
       # ==========================================================
       - name: Sanity check bundle
         run: |
@@ -102,60 +126,50 @@ jobs:
           tar -tzf homebridge-arm64.tar.gz | grep -q config.json
           tar -tzf homebridge-arm64.tar.gz | grep -q "rootfs/usr/local/bin/node"
 
+          echo "Bundle contents preview:"
+          tar -tzf homebridge-arm64.tar.gz | sed -n '1,50p'
+
           echo "Bundle size:"
           du -sh homebridge-arm64.tar.gz
 
       # ==========================================================
-      # STEP 4: Release Metadata Generation
+      # STEP 4: Release
       # ==========================================================
-      - name: Determine Release Name and Details
+      - name: Determine Release Name & Metadata
         run: |
           set -eux
           CURRENT_DATE=$(date +'%Y-%m-%d')
-          
-          # Extract Homebridge version directly from rootfs
+          # Extract version robustly using Python JSON parsing
           if [ -f "bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json" ]; then
-            HB_VERSION=$(grep -m 1 '"version"' bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json | awk -F'"' '{print $4}')
+            HB_VERSION=$(python3 -c "import json; print(json.load(open('bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json'))['version'])")
           else
             HB_VERSION="${{ inputs.homebridge_version || 'latest' }}"
           fi
-
-          # Read Node & NPM version directly from package manifests or system files inside bundle
-          NODE_VERSION=$(grep -m 1 '"NODE_VERSION"' bundle/rootfs/etc/profile.d/* 2>/dev/null | cut -d'=' -f2 || echo "Unknown")
-          
-          # Calculate exact compressed bundle size
-          BUNDLE_SIZE=$(du -sh homebridge-arm64.tar.gz | cut -f1)
-
-          # Export metrics directly to GITHUB_ENV
-          echo "TAG_NAME=v${HB_VERSION}-${CURRENT_DATE}" >> $GITHUB_ENV
-          echo "RELEASE_NAME=Homebridge v${HB_VERSION} (${CURRENT_DATE})" >> $GITHUB_ENV
-          echo "HB_VERSION=${HB_VERSION}" >> $GITHUB_ENV
-          echo "BUNDLE_SIZE=${BUNDLE_SIZE}" >> $GITHUB_ENV
+          echo "RELEASE_NAME=Homebridge V${HB_VERSION}-${CURRENT_DATE}" >> $GITHUB_ENV
+          echo "BUILD_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ env.RELEASE_NAME }}
-          tag_name: ${{ env.TAG_NAME }}
+          tag_name: latest
           make_latest: true
+          fail_on_unmatched_files: true
           files: homebridge-arm64.tar.gz
           body: |
-            ### 📦 Release Asset Details
-            * **Release Version:** `Homebridge v${{ env.HB_VERSION }}`
-            * **Compiled Asset Size:** `${{ env.BUNDLE_SIZE }}` (Uncompressed filesystem-based OCI export)
-            * **Target Architecture:** `ARM64 (aarch64)`
-            * **Base Environment:** `Alpine 3.22`
+            Homebridge UXC Bundle (Stable Build)
 
-            ---
-
-            ### ⚙️ Design Notes
+            -----------------------------
+            DESIGN NOTES
+            -----------------------------
             - Homebridge is installed inside Docker image only
-            - Configured to run cleanly as root (UID 0) to support native OpenWrt UXC micro-container isolation
-            - Configured with `NODE_OPTIONS="--max-old-space-size=128"` to prevent OOM termination on low-RAM hardware
-            - Bundle is purely filesystem-based OCI export with preserved permissions
+            - Flawless single-layer raw rootfs export via container export
+            - Bundle is purely filesystem-based OCI export for UXC
 
-            ---
-
-            ### 🛠️ Build Info
-            - **Base:** Alpine 3.22 (arm64)
-            - **Build System:** Native `ubuntu-24.04-arm` runner utilizing Docker Buildx Cache
+            -----------------------------
+            BUILD INFO
+            -----------------------------
+            Homebridge: ${{ env.RELEASE_NAME }}
+            Commit: ${{ env.BUILD_SHA }}
+            Base: Alpine 3.22 (arm64)
+            Build system: Docker Buildx
