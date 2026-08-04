@@ -413,3 +413,50 @@ du -sh "$BUNDLE_PATH"
 printf '\n\n\n'
 
 echo "🎉 ======== MASTER PIPELINE DEPLOYMENT COMPLETE ======== 🎉"
+
+# ==============================================================================
+# FINAL STATUS
+# ==============================================================================
+
+
+echo
+echo "========================================================"
+echo " 🎉 HOMEBRIDGE UXC DEPLOYMENT COMPLETE 🎉"
+echo "========================================================"
+echo
+
+echo "Container:"
+echo " $CONTAINER_NAME"
+
+echo
+
+echo "Bundle:"
+echo " $BUNDLE_PATH"
+
+echo
+
+echo "Persistent Data:"
+echo " $PERSISTENT_DATA_SOURCE"
+
+echo
+
+echo "Web UI:"
+echo " http://$(uci -q get network.lan.ipaddr):8581"
+
+echo
+
+echo "Management:"
+echo " /etc/init.d/homebridge start"
+echo " /etc/init.d/homebridge stop"
+echo " /etc/init.d/homebridge restart"
+echo " /etc/init.d/homebridge status"
+
+echo
+
+echo "========================================================"
+
+printf '\n\n'
+
+echo "⚡ Homebridge is now running under OpenWrt UXC ⚡"
+
+echo "========(+) DONE ✅ (+)========"
