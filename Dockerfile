@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
-# Using node:24-alpine guarantees Node.js 24 while pulling the latest compatible Alpine Linux base
-FROM node:24-alpine
+# Using node:24-alpine3.22 for stable, reproducible ARM64 builds
+FROM node:24-alpine3.22
 
 ARG HOMEBRIDGE_VERSION=latest
 ARG CONFIG_UI_VERSION=latest
@@ -11,108 +11,142 @@ LABEL org.opencontainers.image.title="openwrt-uxc-homebridge" \
       org.opencontainers.image.source="https://github.com/micpro7/openwrt-uxc-homebridge"
 
 # ==========================================================
-# System dependencies
+# System dependencies & Tini PID 1 Engine
 # ==========================================================
 RUN apk add --no-cache \
-    # ------------------------------------------------------
-    # 1. MANDATORY CORE RUNTIME (Do not remove)
-    # ------------------------------------------------------
     tzdata \
-    # Required to map timezones accurately so scheduled automations run on time.
     ca-certificates \
-    # Required for secure HTTPS outgoing connections to cloud APIs (e.g., Tuya, Ring).
     avahi-compat-libdns_sd \
-    # Required for mDNS/Bonjour advertising so Apple Home can discover Homebridge.
     libstdc++ \
-    # Required by Node.js and various pre-compiled binary modules.
-    sudo \
-    # Required by Homebridge Config UI-X's hardcoded setup execution.
-    \
-    # ------------------------------------------------------
-    # 2. OPTIONAL RUNTIME ENHANCEMENTS (Recommended)
-    # ------------------------------------------------------
-    bash \
-    # Many Homebridge plugins assume Bash is available.
-    tini \
-    # Lightweight init process for proper signal handling and zombie process cleanup.
+    libc6-compat \
     curl \
-    # Useful for script health checks and local diagnostics.
     ffmpeg \
-    # Critical for camera/video processing plugins (e.g., Ring, Nest, RTSP streams).
-    # If you do not run camera streams inside Homebridge, you can safely remove this.
-    \
-    # ------------------------------------------------------
-    # 3. BUILD / COMPILATION TOOLS
-    # ------------------------------------------------------
     python3 \
-    # Required by node-gyp as the build system orchestrator.
     make \
-    # Standard GNU utility used to build and compile code from source.
     g++ \
-    # GNU C++ compiler used to compile native Node.js modules.
     git \
-    # Required by npm to install plugins directly from GitHub repositories.
-    linux-headers
-    # Linux kernel headers required by some native compilation processes.
+    linux-headers \
+    sudo \
+    bash \
+    openssh-client \
+    tini
 
 # ==========================================================
-# CRITICAL: Configure sudo to preserve NPM environment variables
-# (Prevents sudo from stripping cache and path environments)
+# UXC FIX: Replace sudo binary with robust option-stripping wrapper
+# Bypasses setresuid() capability/seccomp restrictions.
+# Intentionally drops flags like -u, -g, -E to force execution as root.
+# Validates that a target command is provided before executing.
 # ==========================================================
-RUN echo "root ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/homebridge \
- && echo "Defaults env_keep += \"NPM_CONFIG_CACHE NPM_CONFIG_TMP HOME NODE_ENV PATH NPM_CONFIG_PREFIX\"" >> /etc/sudoers.d/homebridge
+RUN rm -f /usr/bin/sudo \
+ && cat > /usr/bin/sudo <<'EOF'
+#!/bin/sh
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -n|-E|-H|-S|-k|-K|-b|-v)
+            shift
+            ;;
+        -u|-g|-C)
+            shift 2
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            shift
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+if [ $# -eq 0 ]; then
+    echo "sudo: no command specified" >&2
+    exit 1
+fi
+
+exec "$@"
+EOF
+RUN chmod 0755 /usr/bin/sudo
 
 # ==========================================================
-# Runtime environment & npm configuration
-# Redirect global NPM target to writable persistent storage (/var/lib/homebridge)
+# READ-ONLY / OVERLAY ROOTFS FIX: Redirect npm cache/config/build to /tmp
+# Pre-creates directories and redirects /root/.npm and /root/.config
+# to the writable /tmp mount preventing ENOENT mkdir errors.
 # ==========================================================
-ENV NPM_CONFIG_PREFIX=/var/lib/homebridge \
-    PATH=/var/lib/homebridge/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin \
-    HOME=/var/lib/homebridge \
-    TZ=UTC \
-    NODE_ENV=production \
-    HOMEBRIDGE_CONFIG_UI=1
+RUN mkdir -p /tmp/.npm /tmp/.config /tmp/.node-gyp \
+ && rm -rf /root/.npm /root/.config \
+ && ln -s /tmp/.npm /root/.npm \
+ && ln -s /tmp/.config /root/.config
 
-RUN npm config set prefix /var/lib/homebridge \
+# ==========================================================
+# CRITICAL FIX:
+# Ensure deterministic npm global install location and module path
+# ==========================================================
+ENV NPM_CONFIG_PREFIX=/usr/local \
+    NODE_PATH=/usr/local/lib/node_modules \
+    npm_config_unsafe_perm=true \
+    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin
+
+RUN npm config set prefix /usr/local \
  && npm config set update-notifier false \
  && npm config set audit false \
- && npm config set fund false
+ && npm config set fund false \
+ && npm cache verify
 
 # ==========================================================
-# Install Homebridge
+# Install Homebridge stack
 # ==========================================================
-RUN npm install -g \
-    --unsafe-perm \
+RUN npm install -g --unsafe-perm \
     homebridge@${HOMEBRIDGE_VERSION} \
     homebridge-config-ui-x@${CONFIG_UI_VERSION} \
  && npm cache clean --force
 
 # ==========================================================
-# Validate installation
+# HARD VALIDATION (fail fast if install breaks)
 # ==========================================================
 RUN set -eux; \
-    test -f /usr/local/lib/node_modules/homebridge/package.json || test -f /var/lib/homebridge/lib/node_modules/homebridge/package.json; \
-    node --version; \
-    npm --version; \
-    homebridge --version
+    test -f /usr/local/lib/node_modules/homebridge/package.json; \
+    test -f /usr/local/lib/node_modules/homebridge-config-ui-x/package.json; \
+    command -v homebridge; \
+    command -v hb-service; \
+    node -e "console.log('Node.js Version:', process.version)"; \
+    node -e "console.log('Homebridge OK:', require('/usr/local/lib/node_modules/homebridge/package.json').version)"; \
+    node -e "console.log('UI OK:', require('/usr/local/lib/node_modules/homebridge-config-ui-x/package.json').version)"
 
 # ==========================================================
-# Directory Setup & Target Working Directory
+# Create explicit mount points for persistent storage
+# LINK FIX: Symlink /var/lib/homebridge/plugins -> node_modules
+# guarantees backward compatibility whether plugins are searched 
+# via -P or standard local node_modules resolution.
 # ==========================================================
 RUN mkdir -p \
-    /var/lib/homebridge/accessories \
-    /var/lib/homebridge/backups \
+    /var/lib/homebridge \
+    /var/lib/homebridge/node_modules \
     /var/lib/homebridge/persist \
-    /var/lib/homebridge/node_modules
+    /var/lib/homebridge/accessories \
+ && ln -sf /var/lib/homebridge/node_modules /var/lib/homebridge/plugins
+
+# ==========================================================
+# Runtime Environment & Container Launch
+# ==========================================================
+ENV HOME=/root \
+    TZ=UTC \
+    NODE_ENV=production \
+    NPM_CONFIG_CACHE=/tmp/.npm \
+    NPM_CONFIG_DEVDIR=/tmp/.node-gyp \
+    XDG_CONFIG_HOME=/tmp/.config
 
 WORKDIR /var/lib/homebridge
 
-# Homebridge Config UI X
+# EXPOSE UI PORT
 EXPOSE 8581
 
-# ==========================================================
-# Container Startup
-# ==========================================================
-ENTRYPOINT ["/sbin/tini", "--"]
+# PID 1 INIT ENGINE:
+# Reaps zombie child processes (FFmpeg, Python, BLE scanners) and forwards SIGTERM cleanly
+ENTRYPOINT ["/sbin/tini", "-g", "--"]
 
-CMD ["homebridge"]
+# RUNTIME LAUNCH COMMAND:
+# Runs hb-service inside a fail-safe auto-restart loop
+CMD ["/bin/sh", "-c", "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"]
