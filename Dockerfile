@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
-# Using node:24-alpine3.22 for stable, reproducible ARM64 builds
-FROM node:24-alpine3.22
+# Base Alpine latest release
+FROM alpine:latest
 
 ARG HOMEBRIDGE_VERSION=latest
 ARG CONFIG_UI_VERSION=latest
@@ -11,9 +11,11 @@ LABEL org.opencontainers.image.title="openwrt-uxc-homebridge" \
       org.opencontainers.image.source="https://github.com/micpro7/openwrt-uxc-homebridge"
 
 # ==========================================================
-# System dependencies & Tini PID 1 Engine
+# System dependencies, Node.js runtime, & Tini PID 1 Engine
 # ==========================================================
 RUN apk add --no-cache \
+    nodejs \
+    npm \
     tzdata \
     ca-certificates \
     avahi-compat-libdns_sd \
@@ -87,7 +89,7 @@ RUN mkdir -p /tmp/.npm /tmp/.config /tmp/.node-gyp \
 ENV NPM_CONFIG_PREFIX=/usr/local \
     NODE_PATH=/usr/local/lib/node_modules \
     npm_config_unsafe_perm=true \
-    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin
+    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/sbin:/bin
 
 RUN npm config set prefix /usr/local \
  && npm config set update-notifier false \
