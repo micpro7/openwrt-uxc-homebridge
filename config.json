@@ -2,12 +2,9 @@
   "ociVersion": "1.0.2",
   "hostname": "homebridge",
   "annotations": {
-    "org.opencontainers.image.title": "openwrt-uxc-homebridge",
-    "org.opencontainers.image.description": "Homebridge deployment for OpenWrt using native UXC containers",
-    "org.opencontainers.image.source": "https://github.com/micpro7/openwrt-uxc-homebridge",
+    "org.opencontainers.image.source": "https://github.com/micpro7/HomeBridge-UXC",
     "io.homebridge.plugin-path": "/var/lib/homebridge/node_modules",
-    "io.homebridge.storage-path": "/var/lib/homebridge",
-    "_comment_uid_decision": "We run the container process under UID:GID 0 (root). Why? This eliminates native NPM compile failures, permissions collisions with external SSD bind mounts, and socket-binding restrictions. Because UXC lacks CAP_SYS_ADMIN, has a read-only rootfs, and is sandboxed by OpenWrt's procd-ujail namespaces, a 'root' user here is completely isolated from the main host router."
+    "io.homebridge.storage-path": "/var/lib/homebridge"
   },
   "process": {
     "terminal": false,
@@ -16,20 +13,25 @@
       "gid": 0
     },
     "args": [
+      "/sbin/tini",
+      "-g",
+      "--",
       "/bin/sh",
       "-c",
-      "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/node_modules; echo 'Homebridge crashed - restarting in 3s'; sleep 3; done"
+      "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"
     ],
     "env": [
-      "PATH=/var/lib/homebridge/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-      "NPM_CONFIG_PREFIX=/var/lib/homebridge",
-      "NODE_PATH=/var/lib/homebridge/node_modules:/usr/local/lib/node_modules",
-      "HOME=/var/lib/homebridge",
+      "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
+      "HOME=/root",
       "TERM=xterm",
       "TZ=UTC",
       "NODE_ENV=production",
+      "NPM_CONFIG_PREFIX=/usr/local",
+      "NODE_PATH=/usr/local/lib/node_modules",
       "npm_config_update_notifier=false",
       "NPM_CONFIG_CACHE=/tmp/.npm",
+      "NPM_CONFIG_DEVDIR=/tmp/.node-gyp",
+      "XDG_CONFIG_HOME=/tmp/.config",
       "NODE_OPTIONS=--max-old-space-size=256",
       "UV_THREADPOOL_SIZE=4",
       "MDNS_INTERFACE=br-lan",
@@ -43,11 +45,9 @@
         "CAP_FOWNER",
         "CAP_FSETID",
         "CAP_KILL",
-        "CAP_SETGID",
-        "CAP_SETUID",
         "CAP_NET_BIND_SERVICE",
         "CAP_NET_RAW",
-        "CAP_SYS_CHROOT"
+        "CAP_SYS_ADMIN"
       ],
       "effective": [
         "CAP_CHOWN",
@@ -55,11 +55,9 @@
         "CAP_FOWNER",
         "CAP_FSETID",
         "CAP_KILL",
-        "CAP_SETGID",
-        "CAP_SETUID",
         "CAP_NET_BIND_SERVICE",
         "CAP_NET_RAW",
-        "CAP_SYS_CHROOT"
+        "CAP_SYS_ADMIN"
       ],
       "inheritable": [
         "CAP_CHOWN",
@@ -67,11 +65,9 @@
         "CAP_FOWNER",
         "CAP_FSETID",
         "CAP_KILL",
-        "CAP_SETGID",
-        "CAP_SETUID",
         "CAP_NET_BIND_SERVICE",
         "CAP_NET_RAW",
-        "CAP_SYS_CHROOT"
+        "CAP_SYS_ADMIN"
       ],
       "permitted": [
         "CAP_CHOWN",
@@ -79,11 +75,9 @@
         "CAP_FOWNER",
         "CAP_FSETID",
         "CAP_KILL",
-        "CAP_SETGID",
-        "CAP_SETUID",
         "CAP_NET_BIND_SERVICE",
         "CAP_NET_RAW",
-        "CAP_SYS_CHROOT"
+        "CAP_SYS_ADMIN"
       ],
       "ambient": []
     },
@@ -94,11 +88,11 @@
         "soft": 65536
       }
     ],
-    "noNewPrivileges": true
+    "noNewPrivileges": false
   },
   "root": {
     "path": "rootfs",
-    "readonly": true
+    "readonly": false
   },
   "mounts": [
     {
@@ -165,7 +159,7 @@
     {
       "destination": "/var/lib/homebridge",
       "type": "none",
-      "source": "/mnt/SSD/Config/OpenWRT/UXC/homebridge",
+      "source": "/mnt/usb/UXC/homebridge/data",
       "options": [
         "rbind",
         "rw"
@@ -174,7 +168,7 @@
     {
       "destination": "/etc/resolv.conf",
       "type": "none",
-      "source": "/etc/resolv.conf",
+      "source": "/mnt/usb/UXC/homebridge/data/resolv.conf",
       "options": [
         "rbind",
         "ro"
@@ -183,21 +177,11 @@
   ],
   "linux": {
     "namespaces": [
-      {
-        "type": "pid"
-      },
-      {
-        "type": "ipc"
-      },
-      {
-        "type": "uts"
-      },
-      {
-        "type": "mount"
-      },
-      {
-        "type": "cgroup"
-      }
+      { "type": "pid" },
+      { "type": "ipc" },
+      { "type": "uts" },
+      { "type": "mount" },
+      { "type": "cgroup" }
     ],
     "maskedPaths": [
       "/proc/kcore",
