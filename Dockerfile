@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# Pinned stable Alpine Linux release (provides clear versioning in Homebridge UI)
+# Pinned stable Alpine Linux release
 FROM alpine:3.24
 
 ARG HOMEBRIDGE_VERSION=latest
@@ -12,7 +12,6 @@ LABEL org.opencontainers.image.title="openwrt-uxc-homebridge" \
 
 # ==========================================================
 # System dependencies & Tini PID 1 Engine
-# Includes xz and libc6-compat for official Node.js binary extraction
 # ==========================================================
 RUN apk add --no-cache \
     curl \
@@ -24,7 +23,6 @@ RUN apk add --no-cache \
     avahi-compat-libdns_sd \
     dbus \
     libstdc++ \
-    libc6-compat \
     ffmpeg \
     python3 \
     make \
@@ -37,8 +35,8 @@ RUN apk add --no-cache \
     tini
 
 # ==========================================================
-# Install latest official Node.js 24.x LTS binaries directly to /usr/local
-# Bypasses distro package maintainers and provides immediate access to official releases.
+# Install latest official Node.js 24.x LTS (MUSL build for Alpine)
+# Native musl binaries guarantee 100% compatibility with Alpine libc.
 # ==========================================================
 RUN set -eux; \
     ARCH="$(uname -m)"; \
@@ -48,10 +46,10 @@ RUN set -eux; \
         *) echo "Unsupported architecture: $ARCH"; exit 1 ;; \
     esac; \
     NODE_VERSION="$( \
-        curl -fsSL https://nodejs.org/dist/latest-v24.x/SHASUMS256.txt \
-        | awk '/linux-'"${NODE_ARCH}"'\.tar\.xz$/ { sub(/^node-v/, "", $2); sub(/-linux-.*/, "", $2); print $2; exit }' \
+        curl -fsSL https://unofficial-builds.nodejs.org/download/release/latest-v24.x/SHASUMS256.txt \
+        | awk '/linux-'"${NODE_ARCH}"'-musl\.tar\.xz$/ { sub(/^node-v/, "", $2); sub(/-linux-.*/, "", $2); print $2; exit }' \
     )"; \
-    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" \
+    curl -fsSL "https://unofficial-builds.nodejs.org/download/release/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}-musl.tar.xz" \
         | tar -xJ --strip-components=1 -C /usr/local; \
     node --version; \
     npm --version
