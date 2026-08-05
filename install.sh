@@ -121,10 +121,6 @@ mkdir -p "$PERSISTENT_DATA_SOURCE/node_modules"
 mkdir -p "$PERSISTENT_DATA_SOURCE/persist"
 mkdir -p "$PERSISTENT_DATA_SOURCE/accessories"
 
-echo "[i] Linking plugins directory to node_modules..."
-rm -rf "$PERSISTENT_DATA_SOURCE/plugins"
-ln -sf "$PERSISTENT_DATA_SOURCE/node_modules" "$PERSISTENT_DATA_SOURCE/plugins"
-
 echo "[i] Generating clean static container resolv.conf..."
 cat <<'EOF' > "$RESOLV_CONF_SOURCE"
 nameserver 1.1.1.1
@@ -237,7 +233,7 @@ apply_jq "Runtime Environment Matrix" \
         + [
             "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
             "NPM_CONFIG_PREFIX=/usr/local",
-            "NODE_PATH=/usr/local/lib/node_modules",
+            "NODE_PATH=/var/lib/homebridge/node_modules:/usr/local/lib/node_modules",
             "NPM_CONFIG_CACHE=/tmp/.npm",
             "NPM_CONFIG_DEVDIR=/tmp/.node-gyp",
             "XDG_CONFIG_HOME=/tmp/.config",
@@ -417,7 +413,6 @@ echo "🎉 ======== MASTER PIPELINE DEPLOYMENT COMPLETE ======== 🎉"
 # ==============================================================================
 # FINAL STATUS
 # ==============================================================================
-
 
 echo
 echo "========================================================"
