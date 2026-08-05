@@ -97,8 +97,8 @@ jobs:
           # DEBUG: Verify Node location
           find bundle/rootfs -name node
 
-          # Validate runtime and core binaries exist (Node is installed via apk to /usr/bin/node)
-          test -x bundle/rootfs/usr/bin/node
+          # Validate runtime and core binaries exist
+          test -x bundle/rootfs/usr/local/bin/node
           test -x bundle/rootfs/usr/local/bin/homebridge
           test -x bundle/rootfs/usr/local/bin/hb-service
           test -d bundle/rootfs/usr/local/lib/node_modules/homebridge
@@ -124,7 +124,7 @@ jobs:
           set -eux
 
           tar -tzf homebridge-arm64.tar.gz | grep -q config.json
-          tar -tzf homebridge-arm64.tar.gz | grep -q "rootfs/usr/bin/node"
+          tar -tzf homebridge-arm64.tar.gz | grep -q "rootfs/usr/local/bin/node"
 
           echo "Bundle contents preview:"
           tar -tzf homebridge-arm64.tar.gz | sed -n '1,50p'
@@ -133,39 +133,20 @@ jobs:
           du -sh homebridge-arm64.tar.gz
 
       # ==========================================================
-      # STEP 4: Extract Metadata & Build Release
+      # STEP 4: Release
       # ==========================================================
-      - name: Extract Versions & Metadata
+      - name: Determine Release Name & Metadata
         run: |
           set -eux
           CURRENT_DATE=$(date +'%Y-%m-%d')
-          
-          # 1. Parse Alpine Release Version
-          ALPINE_VER=$(cat bundle/rootfs/etc/alpine-release)
-          
-          # 2. Parse Node Version from installed apk database
-          NODE_VER=$(grep -A1 "P:nodejs" bundle/rootfs/lib/apk/db/installed | grep "V:" | cut -d: -f2)
-          
-          # 3. Parse Homebridge Version from package.json
-          HB_VER=$(python3 -c "import json; print(json.load(open('bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json'))['version'])")
-          
-          # 4. Parse Homebridge Config UI X Version from package.json
-          UI_VER=$(python3 -c "import json; print(json.load(open('bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x/package.json'))['version'])")
-          
-          # Export to environment variables
-          echo "ALPINE_VER=${ALPINE_VER}" >> $GITHUB_ENV
-          echo "NODE_VER=${NODE_VER}" >> $GITHUB_ENV
-          echo "HB_VER=${HB_VER}" >> $GITHUB_ENV
-          echo "UI_VER=${UI_VER}" >> $GITHUB_ENV
-          echo "RELEASE_NAME=Homebridge v${HB_VER} (${CURRENT_DATE})" >> $GITHUB_ENV
+          # Extract version robustly using Python JSON parsing
+          if [ -f "bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json" ]; then
+            HB_VERSION=$(python3 -c "import json; print(json.load(open('bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json'))['version'])")
+          else
+            HB_VERSION="${{ inputs.homebridge_version || 'latest' }}"
+          fi
+          echo "RELEASE_NAME=Homebridge V${HB_VERSION}-${CURRENT_DATE}" >> $GITHUB_ENV
           echo "BUILD_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
-
-          # Output summary to GitHub UI
-          echo "### Build Versions 📦" >> $GITHUB_STEP_SUMMARY
-          echo "- **Alpine Linux:** ${ALPINE_VER}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Node.js:** ${NODE_VER}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Homebridge:** ${HB_VER}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Config UI X:** ${UI_VER}" >> $GITHUB_STEP_SUMMARY
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -176,17 +157,19 @@ jobs:
           fail_on_unmatched_files: true
           files: homebridge-arm64.tar.gz
           body: |
-            ### 🚀 Homebridge UXC OCI Bundle (Stable Release)
-
-            **Component Release Manifest:**
-            * **Alpine Linux:** `${{ env.ALPINE_VER }}`
-            * **Node.js:** `${{ env.NODE_VER }}`
-            * **Homebridge:** `v${{ env.HB_VER }}`
-            * **Homebridge UI:** `v${{ env.UI_VER }}`
+            Homebridge UXC Bundle (Stable Build)
 
             -----------------------------
-            BUILD METADATA
+            DESIGN NOTES
             -----------------------------
-            - **Commit SHA:** `${{ env.BUILD_SHA }}`
-            - **Target Arch:** `linux/arm64`
-            - **Export Format:** Native OCI rootfs bundle for OpenWrt UXC
+            - Homebridge is installed inside Docker image only
+            - Flawless single-layer raw rootfs export via container export
+            - Bundle is purely filesystem-based OCI export for UXC
+
+            -----------------------------
+            BUILD INFO
+            -----------------------------
+            Homebridge: ${{ env.RELEASE_NAME }}
+            Commit: ${{ env.BUILD_SHA }}
+            Base: Alpine 3.22 (arm64)
+            Build system: Docker Buildx
