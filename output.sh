@@ -1,7 +1,7 @@
-root@MX5300:~# wget -qO- https://raw.githubusercontent.com/micpro7/uxc/main/install.sh 
-| sh
+root@MX5300:~# wget -qO- https://raw.githubusercontent.com/micpro7/openwrt-uxc-homebrid
+ge/main/test.sh | sh
 ========================================================
- ⚡ HOMEBRIDGE UXC MASTER INITIALIZATION ENGINE ⚡
+ ⚡ HOMEBRIDGE UXC MASTER INITIALIZATION ENGINE (v5) ⚡
 ========================================================
 
 
@@ -23,7 +23,7 @@ root@MX5300:~# wget -qO- https://raw.githubusercontent.com/micpro7/uxc/main/inst
  [https://downloads.openwrt.org/releases/25.12.5/packages/aarch64_cortex-a53/routing/packages.adb]
  [https://downloads.openwrt.org/releases/25.12.5/packages/aarch64_cortex-a53/telephony/packages.adb]
  [https://downloads.openwrt.org/releases/25.12.5/packages/aarch64_cortex-a53/video/packages.adb]
-OK: 11249 distinct packages available
+OK: 11256 distinct packages available
 OK: 172.0 MiB in 473 packages
 ========(+) DONE ✅ (+)========
 
@@ -36,13 +36,14 @@ OK: 172.0 MiB in 473 packages
 
 
 📂 [Phase 3] Constructing host storage target directories...
-[i] Creating directories...
+[i] Creating persistent storage directories...
+[i] Generating clean static container resolv.conf...
 ========(+) DONE ✅ (+)========
 
 
 
-📥 [Phase 4] Pulling production blueprint package from GitHub...
-/mnt/X6/homebridge.ta 100%[========================>] 355.97M  4.81MB/s    in 74s     
+📥 [Phase 4] Pulling production blueprint package from GitHub (micpro7/openwrt-uxc-homebridge)...
+/mnt/X6/homebridge.ta 100%[========================>] 229.51M  4.65MB/s    in 49s     
 
 
 
@@ -57,16 +58,10 @@ OK: 172.0 MiB in 473 packages
 
 
 
-📝 [Phase 5] Injecting master variable matrix via individual JQ splits...
-   ↳ OCI runtime spec downgraded to: 1.0.2 ✅
-   ↳ Mount Target bound to: /mnt/X6/UXC/homebridge/data -> /homebridge ✅
-   ↳ Timezone assigned to: Europe/London ✅
-   ↳ mDNS broadcast mapped to: br-lan ✅
-   ↳ Node engine memory threshold set to: 256MB ✅
-   ↳ Libuv backend worker threads balanced at: 4 ✅
-   ↳ Network socket interface listening on: 0.0.0.0 ✅
-   ↳ Web UI socket host forced to: 0.0.0.0 ✅
-   ↳ Kernel privilege escalation guard: false ✅
+📝 [Phase 5] Injecting host-specific variable matrix...
+   ↳ Storage targets bound to /mnt/X6 ✅
+   ↳ Environment matrix injected (TZ: Europe/London | RAM: 256MB | Threads: 4) ✅
+   ↳ Security privilege escalation flag: false ✅
 
 
 
@@ -88,7 +83,7 @@ OK: 172.0 MiB in 473 packages
 
 
 ✨ Active container framework status verified:
-[ ] homebridge running runtime pid: 2050 container pid: 2062
+[ ] homebridge running runtime pid: 10006 container pid: 10018
 ========(+) DONE ✅ (+)========
 
 
@@ -100,9 +95,34 @@ OK: 172.0 MiB in 473 packages
 
 
 🛠️ Probing Container Size...
-1.2G    /mnt/X6/UXC/homebridge/bundle
+770.5M  /mnt/X6/UXC/homebridge/bundle
 
 
 
 🎉 ======== MASTER PIPELINE DEPLOYMENT COMPLETE ======== 🎉
-root@MX5300:~# 
+
+========================================================
+ 🎉 HOMEBRIDGE UXC DEPLOYMENT COMPLETE 🎉
+========================================================
+
+Container:
+ homebridge
+
+Bundle:
+ /mnt/X6/UXC/homebridge/bundle
+
+Persistent Data:
+ /mnt/X6/UXC/homebridge/data
+
+Web UI:
+ http://192.168.1.1/24:8581
+
+Management:
+ /etc/init.d/homebridge start
+ /etc/init.d/homebridge stop
+ /etc/init.d/homebridge restart
+ /etc/init.d/homebridge status
+
+========================================================
+⚡ Homebridge is now running under OpenWrt UXC ⚡
+========(+) DONE ✅ (+)========
