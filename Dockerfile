@@ -37,10 +37,11 @@ RUN apk add --no-cache \
 
 # ==========================================================
 # NODE PATH FIX FOR ALPINE EDGE / DISTRO PACKAGES:
-# Symlink /usr/bin/node to /usr/local/bin/node to ensure path compatibility 
-# when switching between official Node images and Alpine Edge/distro builds.
+# Relative symlink ensures path compatibility when switching between 
+# official Node images and Alpine Edge/distro builds. Using a relative 
+# path prevents broken absolute symlinks when extracted onto host storage.
 # ==========================================================
-RUN ln -sf /usr/bin/node /usr/local/bin/node
+RUN ln -sf ../../bin/node /usr/local/bin/node
 
 # ==========================================================
 # Avahi & DBus run directory setup
