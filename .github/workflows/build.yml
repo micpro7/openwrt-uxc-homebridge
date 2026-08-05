@@ -171,5 +171,5 @@ jobs:
             -----------------------------
             Homebridge: ${{ env.RELEASE_NAME }}
             Commit: ${{ env.BUILD_SHA }}
-            Base: Alpine 3.22 (arm64)
+            Base: Alpine Edge (arm64)
             Build system: Docker Buildx
