@@ -170,11 +170,9 @@ jobs:
             UI_VER="${{ inputs.config_ui_version || 'latest' }}"
           fi
 
-          # 3. Extract Alpine OS Release Version
+          # 3. Extract Alpine OS Release Version dynamically via VERSION_ID
           if [ -f "bundle/rootfs/etc/os-release" ]; then
-            ALPINE_VER=$(grep PRETTY_NAME bundle/rootfs/etc/os-release | cut -d'"' -f2)
-          else
-            ALPINE_VER="Alpine 3.24"
+            ALPINE_VER="Alpine $(grep VERSION_ID bundle/rootfs/etc/os-release | cut -d'=' -f2 | tr -d '"')"
           fi
 
           # 4. Extract Installed Node.js Version from Header / Package
