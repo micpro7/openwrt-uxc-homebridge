@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
-# Base Alpine latest release
-FROM alpine:latest
+# Using node:24-alpine3.22 for stable, reproducible ARM64 builds
+FROM node:24-alpine3.22
 
 ARG HOMEBRIDGE_VERSION=latest
 ARG CONFIG_UI_VERSION=latest
@@ -11,11 +11,9 @@ LABEL org.opencontainers.image.title="openwrt-uxc-homebridge" \
       org.opencontainers.image.source="https://github.com/micpro7/openwrt-uxc-homebridge"
 
 # ==========================================================
-# System dependencies, Node.js runtime, & Tini PID 1 Engine
+# System dependencies & Tini PID 1 Engine
 # ==========================================================
 RUN apk add --no-cache \
-    nodejs \
-    npm \
     tzdata \
     ca-certificates \
     avahi-compat-libdns_sd \
@@ -85,12 +83,12 @@ RUN mkdir -p /tmp/.npm /tmp/.config /tmp/.node-gyp \
 # ==========================================================
 # CRITICAL FIX:
 # Ensure deterministic npm global install location and module paths.
-# NODE_PATH includes both persistent runtime modules and global installs.
+# Included /var/lib/homebridge/node_modules in NODE_PATH so dynamic plugins resolve seamlessly.
 # ==========================================================
 ENV NPM_CONFIG_PREFIX=/usr/local \
     NODE_PATH=/var/lib/homebridge/node_modules:/usr/local/lib/node_modules \
     npm_config_unsafe_perm=true \
-    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/sbin:/bin
+    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin
 
 RUN npm config set prefix /usr/local \
  && npm config set update-notifier false \
@@ -147,5 +145,5 @@ EXPOSE 8581
 ENTRYPOINT ["/sbin/tini", "-g", "--"]
 
 # RUNTIME LAUNCH COMMAND:
-# Pass -P /var/lib/homebridge/node_modules to force scanning dynamic UI installs
+# Pass -P /var/lib/homebridge/node_modules so dynamic UI installs scan correctly
 CMD ["/bin/sh", "-c", "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/node_modules; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"]
