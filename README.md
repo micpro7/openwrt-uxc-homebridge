@@ -64,17 +64,25 @@ BIND_IP="0.0.0.0"
 
 ```
 ## 🔄 Lifecycle & Service Controls
-The container acts as a native system daemon on OpenWrt and is controlled through standard service calls:
+The container acts as a native system daemon on OpenWrt and is controlled through standard service commands:
 ```bash
 # Verify if the Homebridge container is running
-/etc/init.d/homebridge status
+service homebridge status
+
+# Start the Homebridge container service
+service homebridge start
 
 # Restart the service (cleanly halts, clears state, and re-registers the UXC blueprint)
-/etc/init.d/homebridge restart
+service homebridge restart
 
 # Stop the container gracefully
-/etc/init.d/homebridge stop
+service homebridge stop
 
 ```
-## 📜 License
-Distributed under the MIT License. See LICENSE for more information.
+## 🌊 Start Command Flow Explanation (Autount Workaround)
+When you execute /etc/init.d/homebridge start, the script acts as a robust workaround for native auto-mount timing issues or boot race conditions on OpenWrt. It executes a strict, multi-step validation and deployment sequence:
+ 1. **Storage Availability Check (Mount Loop):** It actively polls /proc/mounts for up to 30 seconds (seq 1 30) waiting for your external flash media ($TARGET_MOUNT) to become ready. If it fails to mount in time, it safely aborts to protect your router's internal overlay storage from accidental write wear.
+ 2. **Configuration Validation:** It verifies that the critical runtime configuration file (config.json) exists inside the bundle directory before proceeding.
+ 3. **Stale State Cleanup:** It forcefully purges any leftover runtime locks or orphaned instances by executing /sbin/uxc kill and /sbin/uxc delete --force.
+ 4. **UXC Blueprint Re-registration:** It compiles and registers a fresh container instance using /sbin/uxc create, binding the designated bundle path and external storage mounts.
+ 5. **Daemon Launch:** Finally, it triggers /sbin/uxc start to bring the service online, logging the operational state directly to the system log via logger.
