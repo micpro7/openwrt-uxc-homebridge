@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
-# Pinned stable Alpine Linux release (clean OS reporting in Homebridge UI)
-FROM alpine:3.24
+# Official Node.js 24 LTS Alpine image
+FROM node:24-alpine
 
 ARG HOMEBRIDGE_VERSION=latest
 ARG CONFIG_UI_VERSION=latest
