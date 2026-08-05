@@ -36,6 +36,13 @@ RUN apk add --no-cache \
     tini
 
 # ==========================================================
+# NODE PATH FIX FOR ALPINE EDGE / DISTRO PACKAGES:
+# Symlink /usr/bin/node to /usr/local/bin/node to ensure path compatibility 
+# when switching between official Node images and Alpine Edge/distro builds.
+# ==========================================================
+RUN ln -sf /usr/bin/node /usr/local/bin/node
+
+# ==========================================================
 # Avahi & DBus run directory setup
 # ==========================================================
 RUN mkdir -p /var/run/dbus /var/run/avahi-daemon \
