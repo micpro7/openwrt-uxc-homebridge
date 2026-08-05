@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# Pinned stable Alpine Linux release
+# Pinned stable Alpine Linux release (clean OS reporting in Homebridge UI)
 FROM alpine:3.24
 
 ARG HOMEBRIDGE_VERSION=latest
@@ -16,7 +16,6 @@ LABEL org.opencontainers.image.title="openwrt-uxc-homebridge" \
 RUN apk add --no-cache \
     curl \
     xz \
-    tar \
     tzdata \
     ca-certificates \
     avahi \
@@ -35,7 +34,7 @@ RUN apk add --no-cache \
     tini
 
 # ==========================================================
-# Install latest official Node.js 22.x LTS (MUSL build for Alpine)
+# Install latest Node.js 24.x (musl build for Alpine)
 # Index-based version lookup prevents 404 alias lookup failures.
 # ==========================================================
 RUN set -eux; \
@@ -47,7 +46,7 @@ RUN set -eux; \
     esac; \
     NODE_VERSION="$( \
         curl -fsSL https://unofficial-builds.nodejs.org/download/release/index.tab \
-        | awk -v arch="linux-${NODE_ARCH}-musl" '$1 ~ /^v22\./ && $0 ~ arch { print $1; exit }' \
+        | awk -v arch="linux-${NODE_ARCH}-musl" '$1 ~ /^v24\./ && $0 ~ arch { print $1; exit }' \
     )"; \
     echo "Resolved Node.js Version: ${NODE_VERSION}"; \
     curl -fsSL "https://unofficial-builds.nodejs.org/download/release/${NODE_VERSION}/node-${NODE_VERSION}-linux-${NODE_ARCH}-musl.tar.xz" \
