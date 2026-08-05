@@ -450,8 +450,6 @@ echo
 
 echo "========================================================"
 
-printf '\n\n'
-
 echo "⚡ Homebridge is now running under OpenWrt UXC ⚡"
 
 echo "========(+) DONE ✅ (+)========"
