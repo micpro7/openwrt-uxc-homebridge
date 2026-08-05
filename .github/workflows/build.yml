@@ -74,11 +74,27 @@ jobs:
           tar -xpf rootfs.tar -C bundle/rootfs --owner=0 --group=0 --numeric-owner --same-permissions
           rm -f rootfs.tar
 
-          # Strip unnecessary files
+          # Strip unnecessary OS caches & docs
           rm -rf bundle/rootfs/usr/share/man \
                  bundle/rootfs/usr/share/doc \
                  bundle/rootfs/var/cache/apk/* \
                  bundle/rootfs/tmp/*
+
+          # Safe node_modules cleanup (Strips markdown, maps, tests; preserves native headers & tools)
+          find bundle/rootfs/usr/local/lib/node_modules -type f \( \
+              -name "*.md" -o \
+              -name "*.markdown" -o \
+              -name "*.map" -o \
+              -name "*.d.ts" \
+          \) -delete
+
+          find bundle/rootfs/usr/local/lib/node_modules -type d \( \
+              -name "test" -o \
+              -name "tests" -o \
+              -name "example" -o \
+              -name "examples" -o \
+              -name ".github" \
+          \) -exec rm -rf {} + 2>/dev/null || true
 
           # Copy config
           cp ./config.json bundle/config.json
@@ -161,7 +177,7 @@ jobs:
             ALPINE_VER="Alpine 3.24"
           fi
 
-          # 4. Extract Installed Node.js Version from Binary Header / Package
+          # 4. Extract Installed Node.js Version from Header / Package
           if [ -f "bundle/rootfs/usr/local/include/node/node_version.h" ]; then
             MAJOR=$(grep "#define NODE_MAJOR_VERSION" bundle/rootfs/usr/local/include/node/node_version.h | awk '{print $3}')
             MINOR=$(grep "#define NODE_MINOR_VERSION" bundle/rootfs/usr/local/include/node/node_version.h | awk '{print $3}')
