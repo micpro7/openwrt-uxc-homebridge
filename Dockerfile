@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
-# Bleeding-edge Alpine Linux (tracks latest Node.js & system packages)
-FROM alpine:edge
+# Pinned stable Alpine Linux release (provides clear versioning in Homebridge UI)
+FROM alpine:3.24
 
 ARG HOMEBRIDGE_VERSION=latest
 ARG CONFIG_UI_VERSION=latest
@@ -11,11 +11,13 @@ LABEL org.opencontainers.image.title="openwrt-uxc-homebridge" \
       org.opencontainers.image.source="https://github.com/micpro7/openwrt-uxc-homebridge"
 
 # ==========================================================
-# System dependencies, Node.js runtime, & Tini PID 1 Engine
+# System dependencies & Tini PID 1 Engine
+# Includes xz and libc6-compat for official Node.js binary extraction
 # ==========================================================
 RUN apk add --no-cache \
-    nodejs \
-    npm \
+    curl \
+    xz \
+    tar \
     tzdata \
     ca-certificates \
     avahi \
@@ -23,7 +25,6 @@ RUN apk add --no-cache \
     dbus \
     libstdc++ \
     libc6-compat \
-    curl \
     ffmpeg \
     python3 \
     make \
@@ -36,12 +37,24 @@ RUN apk add --no-cache \
     tini
 
 # ==========================================================
-# NODE PATH FIX FOR ALPINE EDGE / DISTRO PACKAGES:
-# Relative symlink ensures path compatibility when switching between 
-# official Node images and Alpine Edge/distro builds. Using a relative 
-# path prevents broken absolute symlinks when extracted onto host storage.
+# Install latest official Node.js 24.x LTS binaries directly to /usr/local
+# Bypasses distro package maintainers and provides immediate access to official releases.
 # ==========================================================
-RUN ln -sf ../../bin/node /usr/local/bin/node
+RUN set -eux; \
+    ARCH="$(uname -m)"; \
+    case "$ARCH" in \
+        aarch64) NODE_ARCH="arm64" ;; \
+        x86_64) NODE_ARCH="x64" ;; \
+        *) echo "Unsupported architecture: $ARCH"; exit 1 ;; \
+    esac; \
+    NODE_VERSION="$( \
+        curl -fsSL https://nodejs.org/dist/latest-v24.x/SHASUMS256.txt \
+        | awk '/linux-'"${NODE_ARCH}"'\.tar\.xz$/ { sub(/^node-v/, "", $2); sub(/-linux-.*/, "", $2); print $2; exit }' \
+    )"; \
+    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" \
+        | tar -xJ --strip-components=1 -C /usr/local; \
+    node --version; \
+    npm --version
 
 # ==========================================================
 # Avahi & DBus run directory setup
