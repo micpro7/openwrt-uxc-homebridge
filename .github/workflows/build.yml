@@ -98,7 +98,7 @@ jobs:
           find bundle/rootfs -name node
 
           # Validate runtime and core binaries exist
-          test -x bundle/rootfs/usr/local/bin/node
+          test -x bundle/rootfs/usr/bin/node
           test -x bundle/rootfs/usr/local/bin/homebridge
           test -x bundle/rootfs/usr/local/bin/hb-service
           test -d bundle/rootfs/usr/local/lib/node_modules/homebridge
@@ -124,7 +124,7 @@ jobs:
           set -eux
 
           tar -tzf homebridge-arm64.tar.gz | grep -q config.json
-          tar -tzf homebridge-arm64.tar.gz | grep -q "rootfs/usr/local/bin/node"
+          tar -tzf homebridge-arm64.tar.gz | grep -q "rootfs/usr/bin/node"
 
           echo "Bundle contents preview:"
           tar -tzf homebridge-arm64.tar.gz | sed -n '1,50p'
