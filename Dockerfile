@@ -35,8 +35,8 @@ RUN apk add --no-cache \
     tini
 
 # ==========================================================
-# Install latest official Node.js 24.x LTS (MUSL build for Alpine)
-# Native musl binaries guarantee 100% compatibility with Alpine libc.
+# Install latest official Node.js 22.x LTS (MUSL build for Alpine)
+# Index-based version lookup prevents 404 alias lookup failures.
 # ==========================================================
 RUN set -eux; \
     ARCH="$(uname -m)"; \
@@ -46,10 +46,11 @@ RUN set -eux; \
         *) echo "Unsupported architecture: $ARCH"; exit 1 ;; \
     esac; \
     NODE_VERSION="$( \
-        curl -fsSL https://unofficial-builds.nodejs.org/download/release/latest-v24.x/SHASUMS256.txt \
-        | awk '/linux-'"${NODE_ARCH}"'-musl\.tar\.xz$/ { sub(/^node-v/, "", $2); sub(/-linux-.*/, "", $2); print $2; exit }' \
+        curl -fsSL https://unofficial-builds.nodejs.org/download/release/index.tab \
+        | awk -v arch="linux-${NODE_ARCH}-musl" '$1 ~ /^v22\./ && $0 ~ arch { print $1; exit }' \
     )"; \
-    curl -fsSL "https://unofficial-builds.nodejs.org/download/release/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}-musl.tar.xz" \
+    echo "Resolved Node.js Version: ${NODE_VERSION}"; \
+    curl -fsSL "https://unofficial-builds.nodejs.org/download/release/${NODE_VERSION}/node-${NODE_VERSION}-linux-${NODE_ARCH}-musl.tar.xz" \
         | tar -xJ --strip-components=1 -C /usr/local; \
     node --version; \
     npm --version
@@ -129,7 +130,6 @@ RUN npm install -g --unsafe-perm \
 
 # ==========================================================
 # Persistent mount points for host flash media
-# (No symlinks needed: NODE_PATH & -P flag handle module resolution)
 # ==========================================================
 RUN mkdir -p \
     /var/lib/homebridge \
