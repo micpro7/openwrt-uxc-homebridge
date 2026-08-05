@@ -12,6 +12,8 @@ LABEL org.opencontainers.image.title="openwrt-uxc-homebridge" \
 
 # ==========================================================
 # System dependencies & Tini PID 1 Engine
+# All build tools (make, g++, python3, git, headers) are preserved 
+# to support runtime native plugin compilation.
 # ==========================================================
 RUN apk add --no-cache \
     curl \
@@ -35,7 +37,8 @@ RUN apk add --no-cache \
 
 # ==========================================================
 # Install latest Node.js 24.x (musl build for Alpine)
-# Index-based version lookup prevents 404 alias lookup failures.
+# 1. Index-based version lookup prevents 404 alias failures.
+# 2. SHA256 checksum verification protects against corrupted downloads.
 # ==========================================================
 RUN set -eux; \
     ARCH="$(uname -m)"; \
@@ -44,13 +47,29 @@ RUN set -eux; \
         x86_64) NODE_ARCH="x64" ;; \
         *) echo "Unsupported architecture: $ARCH"; exit 1 ;; \
     esac; \
+    \
+    # Resolve latest v24.x release version for musl \
     NODE_VERSION="$( \
         curl -fsSL https://unofficial-builds.nodejs.org/download/release/index.tab \
         | awk -v arch="linux-${NODE_ARCH}-musl" '$1 ~ /^v24\./ && $0 ~ arch { print $1; exit }' \
     )"; \
     echo "Resolved Node.js Version: ${NODE_VERSION}"; \
-    curl -fsSL "https://unofficial-builds.nodejs.org/download/release/${NODE_VERSION}/node-${NODE_VERSION}-linux-${NODE_ARCH}-musl.tar.xz" \
-        | tar -xJ --strip-components=1 -C /usr/local; \
+    \
+    TARBALL="node-${NODE_VERSION}-linux-${NODE_ARCH}-musl.tar.xz"; \
+    BASE_URL="https://unofficial-builds.nodejs.org/download/release/${NODE_VERSION}"; \
+    \
+    # Download binary archive & SHASUMS256.txt \
+    curl -fsSL "${BASE_URL}/${TARBALL}" -o "/tmp/${TARBALL}"; \
+    curl -fsSL "${BASE_URL}/SHASUMS256.txt" -o "/tmp/SHASUMS256.txt"; \
+    \
+    # SHA256 Checksum Verification \
+    cd /tmp; \
+    grep " ${TARBALL}\$" SHASUMS256.txt | sha256sum -c -; \
+    \
+    # Extract to /usr/local & clean up \
+    tar -xJ -f "/tmp/${TARBALL}" --strip-components=1 -C /usr/local; \
+    rm -f "/tmp/${TARBALL}" /tmp/SHASUMS256.txt; \
+    \
     node --version; \
     npm --version
 
