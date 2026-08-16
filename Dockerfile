@@ -36,9 +36,18 @@ RUN apk add --no-cache \
     tini
 
 # ==========================================================
-# Install latest Node.js 24.x (musl build for Alpine)
-# 1. Index-based version lookup prevents 404 alias failures.
-# 2. SHA256 checksum verification protects against corrupted downloads.
+# Ensure persistent mount paths exist first
+# ==========================================================
+RUN mkdir -p \
+    /var/lib/homebridge \
+    /var/lib/homebridge/bin \
+    /var/lib/homebridge/lib/node_modules \
+    /var/lib/homebridge/node_modules \
+    /var/lib/homebridge/persist \
+    /var/lib/homebridge/accessories
+
+# ==========================================================
+# Install latest Node.js 24.x (musl build for Alpine) directly into /var/lib/homebridge
 # ==========================================================
 RUN set -eux; \
     ARCH="$(uname -m)"; \
@@ -48,7 +57,6 @@ RUN set -eux; \
         *) echo "Unsupported architecture: $ARCH"; exit 1 ;; \
     esac; \
     \
-    # Resolve latest v24.x release version for musl \
     NODE_VERSION="$( \
         curl -fsSL https://unofficial-builds.nodejs.org/download/release/index.tab \
         | awk -v arch="linux-${NODE_ARCH}-musl" '$1 ~ /^v24\./ && $0 ~ arch { print $1; exit }' \
@@ -58,16 +66,13 @@ RUN set -eux; \
     TARBALL="node-${NODE_VERSION}-linux-${NODE_ARCH}-musl.tar.xz"; \
     BASE_URL="https://unofficial-builds.nodejs.org/download/release/${NODE_VERSION}"; \
     \
-    # Download binary archive & SHASUMS256.txt \
     curl -fsSL "${BASE_URL}/${TARBALL}" -o "/tmp/${TARBALL}"; \
     curl -fsSL "${BASE_URL}/SHASUMS256.txt" -o "/tmp/SHASUMS256.txt"; \
     \
-    # SHA256 Checksum Verification \
     cd /tmp; \
     grep " ${TARBALL}\$" SHASUMS256.txt | sha256sum -c -; \
     \
-    # Extract to /usr/local & clean up \
-    tar -xJ -f "/tmp/${TARBALL}" --strip-components=1 -C /usr/local; \
+    tar -xJ -f "/tmp/${TARBALL}" --strip-components=1 -C /var/lib/homebridge; \
     rm -f "/tmp/${TARBALL}" /tmp/SHASUMS256.txt; \
     \
     node --version; \
@@ -124,14 +129,15 @@ RUN mkdir -p /tmp/.npm /tmp/.config /tmp/.node-gyp \
  && ln -s /tmp/.config /root/.config
 
 # ==========================================================
-# CRITICAL FIX: Deterministic npm global install location and module paths
+# Deterministic npm global install location and module paths under /var/lib/homebridge
 # ==========================================================
-ENV NPM_CONFIG_PREFIX=/usr/local \
-    NODE_PATH=/var/lib/homebridge/node_modules:/usr/local/lib/node_modules \
+ENV NPM_CONFIG_PREFIX=/var/lib/homebridge \
+    NODE_PATH=/var/lib/homebridge/node_modules:/var/lib/homebridge/lib/node_modules \
     npm_config_unsafe_perm=true \
-    PYTHON=/usr/bin/python3
+    PYTHON=/usr/bin/python3 \
+    PATH=/var/lib/homebridge/bin:/var/lib/homebridge/sbin:/usr/bin:/usr/sbin:/bin:/sbin
 
-RUN npm config set prefix /usr/local \
+RUN npm config set prefix /var/lib/homebridge \
  && npm config set update-notifier false \
  && npm config set audit false \
  && npm config set fund false \
@@ -146,25 +152,16 @@ RUN npm install -g --unsafe-perm \
  && npm cache clean --force
 
 # ==========================================================
-# Persistent mount points for host flash media
-# ==========================================================
-RUN mkdir -p \
-    /var/lib/homebridge \
-    /var/lib/homebridge/node_modules \
-    /var/lib/homebridge/persist \
-    /var/lib/homebridge/accessories
-
-# ==========================================================
 # HARD VALIDATION (fail fast if build breaks)
 # ==========================================================
 RUN set -eux; \
-    test -f /usr/local/lib/node_modules/homebridge/package.json; \
-    test -f /usr/local/lib/node_modules/homebridge-config-ui-x/package.json; \
+    test -f /var/lib/homebridge/lib/node_modules/homebridge/package.json; \
+    test -f /var/lib/homebridge/lib/node_modules/homebridge-config-ui-x/package.json; \
     command -v homebridge; \
     command -v hb-service; \
     node -e "console.log('Node.js Version:', process.version)"; \
-    node -e "console.log('Homebridge OK:', require('/usr/local/lib/node_modules/homebridge/package.json').version)"; \
-    node -e "console.log('UI OK:', require('/usr/local/lib/node_modules/homebridge-config-ui-x/package.json').version)"
+    node -e "console.log('Homebridge OK:', require('/var/lib/homebridge/lib/node_modules/homebridge/package.json').version)"; \
+    node -e "console.log('UI OK:', require('/var/lib/homebridge/lib/node_modules/homebridge-config-ui-x/package.json').version)"
 
 # ==========================================================
 # Runtime Environment & Container Launch
@@ -182,4 +179,4 @@ EXPOSE 8581
 
 ENTRYPOINT ["/sbin/tini", "-g", "--"]
 
-CMD ["/bin/sh", "-c", "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/node_modules; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"]
+CMD ["/bin/sh", "-c", "while true; do /var/lib/homebridge/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/node_modules; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"]
