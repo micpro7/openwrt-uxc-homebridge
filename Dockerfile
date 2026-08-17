@@ -79,10 +79,26 @@ RUN mkdir -p /var/run/dbus /var/run/avahi-daemon \
  && chown -R root:root /var/run/dbus /var/run/avahi-daemon
 
 # ==========================================================
-# UXC FIX: Bypass sudo since container runs as root
+# UXC FIX: Robust sudo wrapper script for Homebridge UI
 # ==========================================================
 RUN rm -f /usr/bin/sudo \
- && ln -s /bin/sh /usr/bin/sudo
+ && cat > /usr/bin/sudo <<'EOF'
+#!/bin/sh
+shift_args() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -n|-E|-H|-S|-k|-K|-b|-v) shift ;;
+            -u|-g|-C) shift 2 ;;
+            --) shift; break ;;
+            -*) shift ;;
+            *) break ;;
+        esac
+    done
+    exec "$@"
+}
+shift_args "$@"
+EOF
+RUN chmod 0755 /usr/bin/sudo
 
 # ==========================================================
 # READ-ONLY / OVERLAY ROOTFS FIX: Redirect npm cache/config/build to /tmp
