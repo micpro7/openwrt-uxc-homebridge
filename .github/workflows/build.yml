@@ -1,4 +1,4 @@
-Name: Build Homebridge UXC Bundle
+name: Build Homebridge UXC Bundle
 
 on:
   workflow_dispatch:
