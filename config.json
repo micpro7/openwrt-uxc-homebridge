@@ -7,7 +7,7 @@
     "io.homebridge.node-path": "/usr/local/bin",
     "io.homebridge.storage-path": "/var/lib/homebridge",
     "io.homebridge.config-path": "/var/lib/homebridge/config.json",
-    "io.homebridge.plugin-path": "/usr/local/lib/node_modules"
+    "io.homebridge.plugin-path": "/var/lib/homebridge/node_modules"
   },
   "process": {
     "terminal": false,
@@ -21,16 +21,15 @@
       "--",
       "/bin/sh",
       "-c",
-      "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"
+      "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/node_modules; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"
     ],
     "env": [
-      "PATH=/var/lib/homebridge/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
+      "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
       "HOME=/root",
       "TERM=xterm",
       "TZ=UTC",
       "NODE_ENV=production",
-      "NPM_CONFIG_PREFIX=/var/lib/homebridge",
-      "NODE_PATH=/var/lib/homebridge/lib/node_modules",
+      "NPM_CONFIG_PREFIX=/usr/local",
       "npm_config_update_notifier=false",
       "NPM_CONFIG_CACHE=/tmp/.npm",
       "NPM_CONFIG_DEVDIR=/tmp/.node-gyp",
@@ -38,7 +37,8 @@
       "NODE_OPTIONS=--max-old-space-size=256",
       "UV_THREADPOOL_SIZE=4",
       "MDNS_INTERFACE=br-lan",
-      "HOMEBRIDGE_IP=0.0.0.0"
+      "HOMEBRIDGE_IP=0.0.0.0",
+      "HOMEBRIDGE_PLUGIN_PATH=/var/lib/homebridge/node_modules"
     ],
     "cwd": "/var/lib/homebridge",
     "capabilities": {
@@ -197,11 +197,7 @@
     ],
     "readonlyPaths": [
       "/proc/asound",
-      "/proc/bus",
-      "/proc/fs",
-      "/proc/irq",
-      "/proc/sys",
-      "/proc/sysrq-trigger"
+      "/*"
     ]
   }
 }
