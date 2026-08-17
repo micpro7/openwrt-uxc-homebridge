@@ -1,4 +1,4 @@
-name: Build Homebridge UXC Bundle
+Name: Build Homebridge UXC Bundle
 
 on:
   workflow_dispatch:
@@ -81,14 +81,14 @@ jobs:
                  bundle/rootfs/tmp/*
 
           # Safe node_modules cleanup (Strips markdown, maps, tests; preserves native headers & tools)
-          find bundle/rootfs/usr/local/lib/node_modules -type f \( \
+          find bundle/rootfs/var/lib/homebridge/lib/node_modules -type f \( \
               -name "*.md" -o \
               -name "*.markdown" -o \
               -name "*.map" -o \
               -name "*.d.ts" \
           \) -delete
 
-          find bundle/rootfs/usr/local/lib/node_modules -type d \( \
+          find bundle/rootfs/var/lib/homebridge/lib/node_modules -type d \( \
               -name "test" -o \
               -name "tests" -o \
               -name "example" -o \
@@ -114,11 +114,11 @@ jobs:
           find bundle/rootfs -name node
 
           # Validate runtime and core binaries exist
-          test -x bundle/rootfs/usr/local/bin/node
-          test -x bundle/rootfs/usr/local/bin/homebridge
-          test -x bundle/rootfs/usr/local/bin/hb-service
-          test -d bundle/rootfs/usr/local/lib/node_modules/homebridge
-          test -d bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x
+          test -x bundle/rootfs/var/lib/homebridge/bin/node
+          test -x bundle/rootfs/var/lib/homebridge/bin/homebridge
+          test -x bundle/rootfs/var/lib/homebridge/bin/hb-service
+          test -d bundle/rootfs/var/lib/homebridge/lib/node_modules/homebridge
+          test -d bundle/rootfs/var/lib/homebridge/lib/node_modules/homebridge-config-ui-x
 
           # Explicitly ensure setuid bit on sudo before packaging
           chmod 4755 bundle/rootfs/usr/bin/sudo 2>/dev/null || true
@@ -140,7 +140,7 @@ jobs:
           set -eux
 
           tar -tzf homebridge-arm64.tar.gz | grep -q config.json
-          tar -tzf homebridge-arm64.tar.gz | grep -q "rootfs/usr/local/bin/node"
+          tar -tzf homebridge-arm64.tar.gz | grep -q "rootfs/var/lib/homebridge/bin/node"
 
           echo "Bundle contents preview:"
           tar -tzf homebridge-arm64.tar.gz | sed -n '1,50p'
@@ -157,15 +157,15 @@ jobs:
           CURRENT_DATE=$(date +'%Y-%m-%d')
           
           # 1. Extract Homebridge Version
-          if [ -f "bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json" ]; then
-            HB_VER=$(python3 -c "import json; print(json.load(open('bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json'))['version'])")
+          if [ -f "bundle/rootfs/var/lib/homebridge/lib/node_modules/homebridge/package.json" ]; then
+            HB_VER=$(python3 -c "import json; print(json.load(open('bundle/rootfs/var/lib/homebridge/lib/node_modules/homebridge/package.json'))['version'])")
           else
             HB_VER="${{ inputs.homebridge_version || 'latest' }}"
           fi
 
           # 2. Extract Homebridge UI Version
-          if [ -f "bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x/package.json" ]; then
-            UI_VER=$(python3 -c "import json; print(json.load(open('bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x/package.json'))['version'])")
+          if [ -f "bundle/rootfs/var/lib/homebridge/lib/node_modules/homebridge-config-ui-x/package.json" ]; then
+            UI_VER=$(python3 -c "import json; print(json.load(open('bundle/rootfs/var/lib/homebridge/lib/node_modules/homebridge-config-ui-x/package.json'))['version'])")
           else
             UI_VER="${{ inputs.config_ui_version || 'latest' }}"
           fi
@@ -176,10 +176,10 @@ jobs:
           fi
 
           # 4. Extract Installed Node.js Version from Header / Package
-          if [ -f "bundle/rootfs/usr/local/include/node/node_version.h" ]; then
-            MAJOR=$(grep "#define NODE_MAJOR_VERSION" bundle/rootfs/usr/local/include/node/node_version.h | awk '{print $3}')
-            MINOR=$(grep "#define NODE_MINOR_VERSION" bundle/rootfs/usr/local/include/node/node_version.h | awk '{print $3}')
-            PATCH=$(grep "#define NODE_PATCH_VERSION" bundle/rootfs/usr/local/include/node/node_version.h | awk '{print $3}')
+          if [ -f "bundle/rootfs/var/lib/homebridge/include/node/node_version.h" ]; then
+            MAJOR=$(grep "#define NODE_MAJOR_VERSION" bundle/rootfs/var/lib/homebridge/include/node/node_version.h | awk '{print $3}')
+            MINOR=$(grep "#define NODE_MINOR_VERSION" bundle/rootfs/var/lib/homebridge/include/node/node_version.h | awk '{print $3}')
+            PATCH=$(grep "#define NODE_PATCH_VERSION" bundle/rootfs/var/lib/homebridge/include/node/node_version.h | awk '{print $3}')
             NODE_VER="v${MAJOR}.${MINOR}.${PATCH}"
           else
             NODE_VER="24.x LTS"
