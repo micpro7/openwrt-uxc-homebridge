@@ -174,7 +174,8 @@ ENV HOME=/root \
     NODE_ENV=production \
     NPM_CONFIG_CACHE=/tmp/.npm \
     NPM_CONFIG_DEVDIR=/tmp/.node-gyp \
-    XDG_CONFIG_HOME=/tmp/.config
+    XDG_CONFIG_HOME=/tmp/.config \
+    HOMEBRIDGE_PLUGIN_PATH=/var/lib/homebridge/node_modules
 
 WORKDIR /var/lib/homebridge
 
