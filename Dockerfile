@@ -127,7 +127,6 @@ RUN mkdir -p /tmp/.npm /tmp/.config /tmp/.node-gyp \
 # CRITICAL FIX: Deterministic npm global install location and module paths
 # ==========================================================
 ENV NPM_CONFIG_PREFIX=/usr/local \
-    NODE_PATH=/var/lib/homebridge/node_modules:/usr/local/lib/node_modules \
     npm_config_unsafe_perm=true \
     PYTHON=/usr/bin/python3 \
     PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/sbin:/bin
