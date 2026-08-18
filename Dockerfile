@@ -135,7 +135,7 @@ RUN npm install -g --unsafe-perm \
 # ==========================================================
 RUN mkdir -p \
     /var/lib/homebridge \
-    /var/lib/homebridge/plugins \
+    /var/lib/homebridge/node_modules \
     /var/lib/homebridge/persist \
     /var/lib/homebridge/accessories
 
@@ -160,7 +160,7 @@ ENV HOME=/root \
     NPM_CONFIG_CACHE=/tmp/.npm \
     NPM_CONFIG_DEVDIR=/tmp/.node-gyp \
     XDG_CONFIG_HOME=/tmp/.config \
-    HOMEBRIDGE_PLUGIN_PATH=/var/lib/homebridge/plugins
+    HOMEBRIDGE_PLUGIN_PATH=/var/lib/homebridge/node_modules
 
 WORKDIR /var/lib/homebridge
 
@@ -168,4 +168,4 @@ EXPOSE 8581
 
 ENTRYPOINT ["/sbin/tini", "-g", "--"]
 
-CMD ["/bin/sh", "-c", "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/plugins; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"]
+CMD ["/bin/sh", "-c", "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/node_modules; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"]
