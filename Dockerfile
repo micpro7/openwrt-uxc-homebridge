@@ -38,8 +38,8 @@ RUN apk add --no-cache \
 # ==========================================================
 RUN set -eux; \
     case "${TARGETARCH}" in \
-        arm64) NODE_ARCH="arm64" ;; \
-        amd64) NODE_ARCH="x64" ;; \
+        arm64) NODE_ARCH="arm64"; EXPECTED_NODE_ARCH="arm64" ;; \
+        amd64) NODE_ARCH="x64"; EXPECTED_NODE_ARCH="x64" ;; \
         *) echo "Unsupported architecture: ${TARGETARCH}"; exit 1 ;; \
     esac; \
     \
@@ -83,6 +83,20 @@ RUN set -eux; \
     # Recreate conventional nodejs symlink \
     ln -sf /usr/local/bin/node /usr/local/bin/nodejs; \
     \
+    # Strict architecture assertion \
+    ACTUAL_ARCH="$(node -p 'process.arch')"; \
+    if [ "$ACTUAL_ARCH" != "$EXPECTED_NODE_ARCH" ]; then \
+        echo "Architecture mismatch! Expected $EXPECTED_NODE_ARCH, got $ACTUAL_ARCH" >&2; \
+        exit 1; \
+    fi; \
+    \
+    # Strict Node.js major-version assertion \
+    ACTUAL_NODE_VERSION="$(node -p 'process.versions.node')"; \
+    case "$ACTUAL_NODE_VERSION" in \
+        24.*) ;; \
+        *) echo "Node.js version mismatch! Expected 24.x, got $ACTUAL_NODE_VERSION" >&2; exit 1 ;; \
+    esac; \
+    \
     node --version; \
     npm --version
 
@@ -93,7 +107,12 @@ RUN mkdir -p /var/run/dbus /var/run/avahi-daemon \
  && chown -R root:root /var/run/dbus /var/run/avahi-daemon
 
 # ==========================================================
-# UXC FIX: Safer sudo wrapper (fails on unknown options)
+# UXC FIX: sudo compatibility shim
+#
+# UXC blocks the privilege-changing syscalls used by real sudo.
+# This wrapper intentionally executes commands with the
+# container's existing UID/GID and does NOT perform privilege
+# changes. This is appropriate because Homebridge runs as root.
 # ==========================================================
 RUN rm -f /usr/bin/sudo \
  && cat > /usr/bin/sudo <<'EOF'
