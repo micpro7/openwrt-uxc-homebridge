@@ -218,4 +218,5 @@ EXPOSE 8581
 
 ENTRYPOINT ["/sbin/tini", "-g", "--"]
 
-CMD ["/bin/sh", "-c", "while true; do /var/lib/homebridge/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/node_modules; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"]
+CMD ["/bin/sh", "-c", "while true; do /var/lib/homebridge/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/lib/node_modules; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"]
+
