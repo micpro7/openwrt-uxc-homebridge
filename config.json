@@ -98,7 +98,7 @@
   },
   "root": {
     "path": "rootfs",
-    "readonly": false
+    "readonly": true
   },
   "mounts": [
     {
