@@ -148,6 +148,12 @@ RUN set -eux; \
     node -e "console.log('Homebridge OK:', require('/usr/local/lib/node_modules/homebridge/package.json').version)"
 
 # ==========================================================
+# Entrypoint Script Integration
+# ==========================================================
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# ==========================================================
 # Runtime Environment & Container Launch
 # ==========================================================
 ENV HOME=/root \
@@ -161,6 +167,4 @@ WORKDIR /var/lib/homebridge
 
 EXPOSE 8581
 
-ENTRYPOINT ["/sbin/tini", "-g", "--"]
-
-CMD ["/bin/sh", "-c", "mkdir -p /var/lib/homebridge/node_modules /var/lib/homebridge/persist /var/lib/homebridge/accessories /var/lib/homebridge/tmp/.npm /var/lib/homebridge/tmp/.node-gyp /var/lib/homebridge/tmp/.config; while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/node_modules; RC=$?; echo \"$(date) Homebridge exited with code ${RC} - restarting in 3s\"; sleep 3; done"]
+ENTRYPOINT ["/sbin/tini", "-g", "--", "/usr/local/bin/entrypoint.sh"]
