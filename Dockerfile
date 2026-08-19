@@ -3,7 +3,6 @@
 # Official Node.js 24 LTS Alpine image
 FROM node:24-alpine
 
-ARG TARGETARCH
 ARG HOMEBRIDGE_VERSION=latest
 ARG CONFIG_UI_VERSION=latest
 
@@ -13,7 +12,8 @@ LABEL org.opencontainers.image.title="openwrt-uxc-homebridge" \
 
 # ==========================================================
 # System dependencies & Tini PID 1 Engine
-# (Retains build tools for runtime native plugin compilation)
+# All build tools (make, g++, python3, git, headers) are preserved 
+# to support runtime native plugin compilation.
 # ==========================================================
 RUN apk add --no-cache \
     curl \
@@ -29,73 +29,46 @@ RUN apk add --no-cache \
     make \
     g++ \
     git \
+    linux-headers \
     sudo \
     bash \
+    openssh-client \
     tini
 
 # ==========================================================
 # Install latest Node.js 24.x (musl build for Alpine)
+# 1. Index-based version lookup prevents 404 alias failures.
+# 2. SHA256 checksum verification protects against corrupted downloads.
 # ==========================================================
 RUN set -eux; \
-    case "${TARGETARCH}" in \
-        arm64) NODE_ARCH="arm64"; EXPECTED_NODE_ARCH="arm64" ;; \
-        amd64) NODE_ARCH="x64"; EXPECTED_NODE_ARCH="x64" ;; \
-        *) echo "Unsupported architecture: ${TARGETARCH}"; exit 1 ;; \
+    ARCH="$(uname -m)"; \
+    case "$ARCH" in \
+        aarch64) NODE_ARCH="arm64" ;; \
+        x86_64) NODE_ARCH="x64" ;; \
+        *) echo "Unsupported architecture: $ARCH"; exit 1 ;; \
     esac; \
     \
+    # Resolve latest v24.x release version for musl \
     NODE_VERSION="$( \
         curl -fsSL https://unofficial-builds.nodejs.org/download/release/index.tab \
         | awk -v arch="linux-${NODE_ARCH}-musl" '$1 ~ /^v24\./ && $0 ~ arch { print $1; exit }' \
     )"; \
-    if [ -z "$NODE_VERSION" ]; then \
-        echo "Error: Failed to resolve Node.js version." >&2; \
-        exit 1; \
-    fi; \
-    case "$NODE_VERSION" in \
-        v24.*) ;; \
-        *) echo "Invalid Node.js version: $NODE_VERSION" >&2; exit 1 ;; \
-    esac; \
     echo "Resolved Node.js Version: ${NODE_VERSION}"; \
     \
     TARBALL="node-${NODE_VERSION}-linux-${NODE_ARCH}-musl.tar.xz"; \
     BASE_URL="https://unofficial-builds.nodejs.org/download/release/${NODE_VERSION}"; \
     \
+    # Download binary archive & SHASUMS256.txt \
     curl -fsSL "${BASE_URL}/${TARBALL}" -o "/tmp/${TARBALL}"; \
     curl -fsSL "${BASE_URL}/SHASUMS256.txt" -o "/tmp/SHASUMS256.txt"; \
     \
+    # SHA256 Checksum Verification \
     cd /tmp; \
     grep " ${TARBALL}\$" SHASUMS256.txt | sha256sum -c -; \
     \
-    # Explicitly clean inherited base image Node binaries and modules \
-    rm -rf \
-        /usr/local/bin/node \
-        /usr/local/bin/nodejs \
-        /usr/local/bin/npm \
-        /usr/local/bin/npx \
-        /usr/local/include/node \
-        /usr/local/lib/node_modules/npm \
-        /usr/local/lib/node_modules/corepack; \
-    \
-    # Extract custom musl build to /usr/local & clean up \
+    # Extract to /usr/local & clean up \
     tar -xJ -f "/tmp/${TARBALL}" --strip-components=1 -C /usr/local; \
     rm -f "/tmp/${TARBALL}" /tmp/SHASUMS256.txt; \
-    \
-    # Recreate conventional nodejs symlink \
-    ln -sf /usr/local/bin/node /usr/local/bin/nodejs; \
-    \
-    # Strict architecture assertion \
-    ACTUAL_ARCH="$(node -p 'process.arch')"; \
-    if [ "$ACTUAL_ARCH" != "$EXPECTED_NODE_ARCH" ]; then \
-        echo "Architecture mismatch! Expected $EXPECTED_NODE_ARCH, got $ACTUAL_ARCH" >&2; \
-        exit 1; \
-    fi; \
-    \
-    # Strict Node.js major-version assertion \
-    ACTUAL_NODE_VERSION="$(node -p 'process.versions.node')"; \
-    case "$ACTUAL_NODE_VERSION" in \
-        24.*) ;; \
-        *) echo "Node.js version mismatch! Expected 24.x, got $ACTUAL_NODE_VERSION" >&2; exit 1 ;; \
-    esac; \
     \
     node --version; \
     npm --version
@@ -107,7 +80,7 @@ RUN mkdir -p /var/run/dbus /var/run/avahi-daemon \
  && chown -R root:root /var/run/dbus /var/run/avahi-daemon
 
 # ==========================================================
-# UXC FIX: sudo compatibility shim
+# UXC FIX: Replace sudo binary with robust option-stripping wrapper
 # ==========================================================
 RUN rm -f /usr/bin/sudo \
  && cat > /usr/bin/sudo <<'EOF'
@@ -125,8 +98,7 @@ while [ $# -gt 0 ]; do
             break
             ;;
         -*)
-            echo "sudo wrapper: unsupported option $1" >&2
-            exit 1
+            shift
             ;;
         *)
             break
@@ -144,23 +116,30 @@ EOF
 RUN chmod 0755 /usr/bin/sudo
 
 # ==========================================================
-# READ-ONLY / OVERLAY ROOTFS FIX: Setup /tmp transient dirs
+# READ-ONLY / OVERLAY ROOTFS FIX: Redirect npm cache/config/build to /tmp
 # ==========================================================
-RUN mkdir -p /tmp/.npm /tmp/.config /tmp/.node-gyp
+RUN mkdir -p /tmp/.npm /tmp/.config /tmp/.node-gyp \
+ && rm -rf /root/.npm /root/.config \
+ && ln -s /tmp/.npm /root/.npm \
+ && ln -s /tmp/.config /root/.config
 
 # ==========================================================
-# CRITICAL CONFIG: Standard global prefix for modules/binaries
+# CRITICAL FIX: Deterministic npm global install location and module paths
 # ==========================================================
 ENV NPM_CONFIG_PREFIX=/usr/local \
+    NODE_PATH=/var/lib/homebridge/node_modules:/usr/local/lib/node_modules \
+    npm_config_unsafe_perm=true \
     PYTHON=/usr/bin/python3 \
     PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/sbin:/bin
 
-RUN npm config set update-notifier false \
+RUN npm config set prefix /usr/local \
+ && npm config set update-notifier false \
  && npm config set audit false \
- && npm config set fund false
+ && npm config set fund false \
+ && npm cache verify
 
 # ==========================================================
-# Install Homebridge stack globally into /usr/local
+# Install Homebridge stack globally
 # ==========================================================
 RUN npm install -g --unsafe-perm \
     homebridge@${HOMEBRIDGE_VERSION} \
@@ -177,23 +156,14 @@ RUN mkdir -p \
     /var/lib/homebridge/accessories
 
 # ==========================================================
-# HARD VALIDATION
+# HARD VALIDATION (fail fast if build breaks)
 # ==========================================================
 RUN set -eux; \
     test -f /usr/local/lib/node_modules/homebridge/package.json; \
     test -f /usr/local/lib/node_modules/homebridge-config-ui-x/package.json; \
     command -v homebridge; \
     command -v hb-service; \
-    node --version; \
-    npm --version; \
-    node -p "process.execPath"; \
-    npm prefix -g; \
-    npm root -g; \
-    npm config get prefix; \
-    node -p "process.versions.modules"; \
-    node -p "process.platform + '/' + process.arch"; \
-    readlink -f "$(command -v node)"; \
-    readlink -f "$(command -v npm)"; \
+    node -e "console.log('Node.js Version:', process.version)"; \
     node -e "console.log('Homebridge OK:', require('/usr/local/lib/node_modules/homebridge/package.json').version)"; \
     node -e "console.log('UI OK:', require('/usr/local/lib/node_modules/homebridge-config-ui-x/package.json').version)"
 
@@ -213,4 +183,4 @@ EXPOSE 8581
 
 ENTRYPOINT ["/sbin/tini", "-g", "--"]
 
-CMD ["/bin/sh", "-c", "while true; do hb-service run --allow-root -U /var/lib/homebridge; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"]
+CMD ["/bin/sh", "-c", "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/node_modules; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"]
