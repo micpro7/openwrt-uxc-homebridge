@@ -7,7 +7,7 @@
     "io.homebridge.node-path": "/usr/local/bin",
     "io.homebridge.storage-path": "/var/lib/homebridge",
     "io.homebridge.config-path": "/var/lib/homebridge/config.json",
-    "io.homebridge.plugin-path": "/var/lib/homebridge/node_modules"
+    "io.homebridge.plugin-path": "/usr/local/lib/node_modules"
   },
   "process": {
     "terminal": false,
@@ -21,15 +21,16 @@
       "--",
       "/bin/sh",
       "-c",
-      "while true; do /var/lib/homebridge/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/node_modules; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"
+      "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/node_modules; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"
     ],
     "env": [
-      "PATH=/var/lib/homebridge/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
+      "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
       "HOME=/root",
       "TERM=xterm",
       "TZ=UTC",
       "NODE_ENV=production",
-      "NPM_CONFIG_PREFIX=/var/lib/homebridge",
+      "NPM_CONFIG_PREFIX=/usr/local",
+      "NODE_PATH=/var/lib/homebridge/node_modules:/usr/local/lib/node_modules",
       "npm_config_update_notifier=false",
       "NPM_CONFIG_CACHE=/tmp/.npm",
       "NPM_CONFIG_DEVDIR=/tmp/.node-gyp",
