@@ -148,9 +148,36 @@ RUN set -eux; \
     node -e "console.log('Homebridge OK:', require('/usr/local/lib/node_modules/homebridge/package.json').version)"
 
 # ==========================================================
-# Entrypoint Script Integration
+# Inline Entrypoint Script Generation
 # ==========================================================
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN cat > /usr/local/bin/entrypoint.sh <<'EOF'
+#!/bin/sh
+
+HOMEBRIDGE_DIR="/var/lib/homebridge"
+LOCAL_HB_PKG="$HOMEBRIDGE_DIR/node_modules/homebridge"
+
+mkdir -p "$HOMEBRIDGE_DIR/node_modules" \
+         "$HOMEBRIDGE_DIR/persist" \
+         "$HOMEBRIDGE_DIR/accessories" \
+         "$HOMEBRIDGE_DIR/tmp/.npm" \
+         "$HOMEBRIDGE_DIR/tmp/.config" \
+         "$HOMEBRIDGE_DIR/tmp/.node-gyp"
+
+if [ -f "$LOCAL_HB_PKG/package.json" ]; then
+    if [ "$(node -p "require('$LOCAL_HB_PKG/package.json').name" 2>/dev/null)" = "homebridge" ]; then
+        echo "==> Removing redundant local Homebridge package..."
+        rm -rf "$LOCAL_HB_PKG"
+    fi
+fi
+
+while true; do
+    /usr/local/bin/hb-service run --allow-root -U "$HOMEBRIDGE_DIR" -P "$HOMEBRIDGE_DIR/node_modules"
+    RC=$?
+    echo "$(date) Homebridge exited with code ${RC} - restarting in 3s"
+    sleep 3
+done
+EOF
+
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # ==========================================================
