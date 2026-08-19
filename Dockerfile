@@ -104,14 +104,6 @@ EOF
 RUN chmod 0755 /usr/bin/sudo
 
 # ==========================================================
-# READ-ONLY / OVERLAY ROOTFS FIX: Redirect cache to /tmp
-# ==========================================================
-RUN mkdir -p /tmp/.npm /tmp/.config /tmp/.node-gyp \
- && rm -rf /root/.npm /root/.config \
- && ln -s /tmp/.npm /root/.npm \
- && ln -s /tmp/.config /root/.config
-
-# ==========================================================
 # NPM Config & Global Paths Target Integration
 # ==========================================================
 ENV NPM_CONFIG_PREFIX=/usr/local \
@@ -141,7 +133,10 @@ RUN mkdir -p \
     /var/lib/homebridge \
     /var/lib/homebridge/node_modules \
     /var/lib/homebridge/persist \
-    /var/lib/homebridge/accessories
+    /var/lib/homebridge/accessories \
+    /var/lib/homebridge/tmp/.npm \
+    /var/lib/homebridge/tmp/.config \
+    /var/lib/homebridge/tmp/.node-gyp
 
 # ==========================================================
 # HARD VALIDATION
@@ -159,9 +154,9 @@ RUN set -eux; \
 ENV HOME=/root \
     TZ=UTC \
     NODE_ENV=production \
-    NPM_CONFIG_CACHE=/tmp/.npm \
-    NPM_CONFIG_DEVDIR=/tmp/.node-gyp \
-    XDG_CONFIG_HOME=/tmp/.config
+    NPM_CONFIG_CACHE=/var/lib/homebridge/tmp/.npm \
+    NPM_CONFIG_DEVDIR=/var/lib/homebridge/tmp/.node-gyp \
+    XDG_CONFIG_HOME=/var/lib/homebridge/tmp/.config
 
 WORKDIR /var/lib/homebridge
 
