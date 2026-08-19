@@ -7,7 +7,7 @@
     "io.homebridge.node-path": "/usr/local/bin",
     "io.homebridge.storage-path": "/var/lib/homebridge",
     "io.homebridge.config-path": "/var/lib/homebridge/config.json",
-    "io.homebridge.plugin-path": "/usr/local/lib/node_modules"
+    "io.homebridge.plugin-path": "/var/lib/homebridge/node_modules"
   },
   "process": {
     "terminal": false,
