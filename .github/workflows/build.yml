@@ -163,7 +163,7 @@ jobs:
           fail_on_unmatched_files: true
           files: homebridge-arm64.tar.gz
           body: |
-            Homebridge UXC Bundle (Stabilized Build)
+            Homebridge UXC Bundle (Stabilized Baseline)
 
             - OS Base: ${{ env.ALPINE_VERSION }} (arm64)
             - Node.js Runtime: ${{ env.NODE_VERSION }}
