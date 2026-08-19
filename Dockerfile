@@ -108,11 +108,6 @@ RUN mkdir -p /var/run/dbus /var/run/avahi-daemon \
 
 # ==========================================================
 # UXC FIX: sudo compatibility shim
-#
-# UXC blocks the privilege-changing syscalls used by real sudo.
-# This wrapper intentionally executes commands with the
-# container's existing UID/GID and does NOT perform privilege
-# changes. This is appropriate because Homebridge runs as root.
 # ==========================================================
 RUN rm -f /usr/bin/sudo \
  && cat > /usr/bin/sudo <<'EOF'
@@ -154,18 +149,18 @@ RUN chmod 0755 /usr/bin/sudo
 RUN mkdir -p /tmp/.npm /tmp/.config /tmp/.node-gyp
 
 # ==========================================================
-# CRITICAL CONFIG: Deterministic npm prefix and clean environment
+# CRITICAL CONFIG: Standard global prefix for modules/binaries
 # ==========================================================
-ENV NPM_CONFIG_PREFIX=/var/lib/homebridge \
+ENV NPM_CONFIG_PREFIX=/usr/local \
     PYTHON=/usr/bin/python3 \
-    PATH=/var/lib/homebridge/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/sbin:/bin
+    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/sbin:/bin
 
 RUN npm config set update-notifier false \
  && npm config set audit false \
  && npm config set fund false
 
 # ==========================================================
-# Install Homebridge stack globally
+# Install Homebridge stack globally into /usr/local
 # ==========================================================
 RUN npm install -g --unsafe-perm \
     homebridge@${HOMEBRIDGE_VERSION} \
@@ -182,11 +177,11 @@ RUN mkdir -p \
     /var/lib/homebridge/accessories
 
 # ==========================================================
-# HARD VALIDATION (fail fast with enhanced diagnostics)
+# HARD VALIDATION
 # ==========================================================
 RUN set -eux; \
-    test -f /var/lib/homebridge/lib/node_modules/homebridge/package.json; \
-    test -f /var/lib/homebridge/lib/node_modules/homebridge-config-ui-x/package.json; \
+    test -f /usr/local/lib/node_modules/homebridge/package.json; \
+    test -f /usr/local/lib/node_modules/homebridge-config-ui-x/package.json; \
     command -v homebridge; \
     command -v hb-service; \
     node --version; \
@@ -199,8 +194,8 @@ RUN set -eux; \
     node -p "process.platform + '/' + process.arch"; \
     readlink -f "$(command -v node)"; \
     readlink -f "$(command -v npm)"; \
-    node -e "console.log('Homebridge OK:', require('/var/lib/homebridge/lib/node_modules/homebridge/package.json').version)"; \
-    node -e "console.log('UI OK:', require('/var/lib/homebridge/lib/node_modules/homebridge-config-ui-x/package.json').version)"
+    node -e "console.log('Homebridge OK:', require('/usr/local/lib/node_modules/homebridge/package.json').version)"; \
+    node -e "console.log('UI OK:', require('/usr/local/lib/node_modules/homebridge-config-ui-x/package.json').version)"
 
 # ==========================================================
 # Runtime Environment & Container Launch
@@ -218,5 +213,4 @@ EXPOSE 8581
 
 ENTRYPOINT ["/sbin/tini", "-g", "--"]
 
-CMD ["/bin/sh", "-c", "while true; do /var/lib/homebridge/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/lib/node_modules; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"]
-
+CMD ["/bin/sh", "-c", "while true; do hb-service run --allow-root -U /var/lib/homebridge; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"]
