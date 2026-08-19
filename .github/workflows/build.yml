@@ -45,7 +45,6 @@ jobs:
         run: |
           set -eux
 
-          # 1. Build local container image
           docker buildx build \
             --platform linux/arm64 \
             --tag homebridge-uxc:build \
@@ -56,7 +55,6 @@ jobs:
             --load \
             .
 
-          # 2. Export raw filesystem tarball using container export
           CONTAINER_ID=$(docker create homebridge-uxc:build)
           docker export "$CONTAINER_ID" > rootfs.tar
           docker rm "$CONTAINER_ID"
@@ -70,36 +68,17 @@ jobs:
 
           mkdir -p bundle/rootfs
 
-          # Extract image filesystem forcing root (0:0) and preserving permissions
           tar -xpf rootfs.tar -C bundle/rootfs --owner=0 --group=0 --numeric-owner --same-permissions
           rm -f rootfs.tar
 
-          # Strip unnecessary OS caches & docs
+          # Strip unnecessary OS caches & docs only (Preserving node_modules intact during debugging)
           rm -rf bundle/rootfs/usr/share/man \
                  bundle/rootfs/usr/share/doc \
                  bundle/rootfs/var/cache/apk/* \
                  bundle/rootfs/tmp/*
 
-          # Safe node_modules cleanup (Strips markdown, maps, tests; preserves native headers & tools)
-          find bundle/rootfs/usr/local/lib/node_modules -type f \( \
-              -name "*.md" -o \
-              -name "*.markdown" -o \
-              -name "*.map" -o \
-              -name "*.d.ts" \
-          \) -delete
-
-          find bundle/rootfs/usr/local/lib/node_modules -type d \( \
-              -name "test" -o \
-              -name "tests" -o \
-              -name "example" -o \
-              -name "examples" -o \
-              -name ".github" \
-          \) -exec rm -rf {} + 2>/dev/null || true
-
-          # Copy config
           cp ./config.json bundle/config.json
 
-          # Validate config syntax and required OCI fields
           python3 -m json.tool bundle/config.json > /dev/null
           python3 - <<'PY'
           import json
@@ -110,20 +89,12 @@ jobs:
           print("OCI config OK")
           PY
 
-          # DEBUG: Verify Node location
-          find bundle/rootfs -name node
-
-          # Validate runtime and core binaries exist
           test -x bundle/rootfs/usr/local/bin/node
           test -x bundle/rootfs/usr/local/bin/homebridge
           test -x bundle/rootfs/usr/local/bin/hb-service
           test -d bundle/rootfs/usr/local/lib/node_modules/homebridge
           test -d bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x
 
-          # Explicitly ensure setuid bit on sudo before packaging
-          chmod 4755 bundle/rootfs/usr/bin/sudo 2>/dev/null || true
-
-          # Create final bundle with strict root ownership & preserved permissions
           tar \
             --numeric-owner \
             --owner=0 \
@@ -133,7 +104,7 @@ jobs:
             -C bundle .
 
       # ==========================================================
-      # STEP 3: Minimal sanity check & contents review
+      # STEP 3: Sanity check
       # ==========================================================
       - name: Sanity check bundle
         run: |
@@ -141,41 +112,32 @@ jobs:
 
           tar -tzf homebridge-arm64.tar.gz | grep -q config.json
           tar -tzf homebridge-arm64.tar.gz | grep -q "rootfs/usr/local/bin/node"
-
-          echo "Bundle contents preview:"
-          tar -tzf homebridge-arm64.tar.gz | sed -n '1,50p'
-
-          echo "Bundle size:"
           du -sh homebridge-arm64.tar.gz
 
       # ==========================================================
-      # STEP 4: Release & Dynamic Metadata Extraction
+      # STEP 4: Metadata & Release
       # ==========================================================
       - name: Determine Release Name & Metadata
         run: |
           set -eux
           CURRENT_DATE=$(date +'%Y-%m-%d')
           
-          # 1. Extract Homebridge Version
           if [ -f "bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json" ]; then
             HB_VER=$(python3 -c "import json; print(json.load(open('bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json'))['version'])")
           else
             HB_VER="${{ inputs.homebridge_version || 'latest' }}"
           fi
 
-          # 2. Extract Homebridge UI Version
           if [ -f "bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x/package.json" ]; then
             UI_VER=$(python3 -c "import json; print(json.load(open('bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x/package.json'))['version'])")
           else
             UI_VER="${{ inputs.config_ui_version || 'latest' }}"
           fi
 
-          # 3. Extract Alpine OS Release Version dynamically via VERSION_ID
           if [ -f "bundle/rootfs/etc/os-release" ]; then
             ALPINE_VER="Alpine $(grep VERSION_ID bundle/rootfs/etc/os-release | cut -d'=' -f2 | tr -d '"')"
           fi
 
-          # 4. Extract Installed Node.js Version from Header / Package
           if [ -f "bundle/rootfs/usr/local/include/node/node_version.h" ]; then
             MAJOR=$(grep "#define NODE_MAJOR_VERSION" bundle/rootfs/usr/local/include/node/node_version.h | awk '{print $3}')
             MINOR=$(grep "#define NODE_MINOR_VERSION" bundle/rootfs/usr/local/include/node/node_version.h | awk '{print $3}')
@@ -201,18 +163,8 @@ jobs:
           fail_on_unmatched_files: true
           files: homebridge-arm64.tar.gz
           body: |
-            Homebridge UXC Bundle (Stable Build)
+            Homebridge UXC Bundle (Stabilized Build)
 
-            -----------------------------
-            DESIGN NOTES
-            -----------------------------
-            - Homebridge installed inside Docker image environment
-            - Flawless single-layer raw rootfs export via container export
-            - Pure filesystem-based OCI export for native OpenWrt UXC
-
-            -----------------------------
-            BUILD COMPONENT VERSIONS
-            -----------------------------
             - OS Base: ${{ env.ALPINE_VERSION }} (arm64)
             - Node.js Runtime: ${{ env.NODE_VERSION }}
             - Homebridge Core: v${{ env.HB_VERSION }}
