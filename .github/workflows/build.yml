@@ -86,7 +86,7 @@ jobs:
               -name "*.markdown" -o \
               -name "*.map" -o \
               -name "*.d.ts" \
-          \) -delete || true
+          \) -delete
 
           find bundle/rootfs/usr/local/lib/node_modules -type d \( \
               -name "test" -o \
