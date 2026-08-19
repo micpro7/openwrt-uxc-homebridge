@@ -1,6 +1,5 @@
 # syntax=docker/dockerfile:1
 
-# Official Node.js 24 LTS Alpine image
 FROM node:24-alpine
 
 ARG HOMEBRIDGE_VERSION=latest
@@ -164,4 +163,4 @@ EXPOSE 8581
 
 ENTRYPOINT ["/sbin/tini", "-g", "--"]
 
-CMD ["/bin/sh", "-c", "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/node_modules; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"]
+CMD ["/bin/sh", "-c", "mkdir -p /var/lib/homebridge/node_modules /var/lib/homebridge/persist /var/lib/homebridge/accessories /var/lib/homebridge/tmp/.npm /var/lib/homebridge/tmp/.node-gyp /var/lib/homebridge/tmp/.config; while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/node_modules; RC=$?; echo \"$(date) Homebridge exited with code ${RC} - restarting in 3s\"; sleep 3; done"]
