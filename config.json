@@ -21,7 +21,7 @@
       "--",
       "/bin/sh",
       "-c",
-      "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/node_modules; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"
+      "mkdir -p \\\n    /var/lib/homebridge/node_modules \\\n    /var/lib/homebridge/persist \\\n    /var/lib/homebridge/accessories \\\n    /var/lib/homebridge/tmp/.npm \\\n    /var/lib/homebridge/tmp/.node-gyp \\\n    /var/lib/homebridge/tmp/.config\n\nwhile true; do\n    /usr/local/bin/hb-service run \\\n        --allow-root \\\n        -U /var/lib/homebridge \\\n        -P /var/lib/homebridge/node_modules\n\n    RC=$?\n    echo \"$(date) Homebridge exited with code ${RC} - restarting in 3s\"\n    sleep 3\ndone"
     ],
     "env": [
       "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
@@ -32,9 +32,12 @@
       "NPM_CONFIG_PREFIX=/usr/local",
       "NODE_PATH=/var/lib/homebridge/node_modules:/usr/local/lib/node_modules",
       "npm_config_update_notifier=false",
-      "NPM_CONFIG_CACHE=/tmp/.npm",
-      "NPM_CONFIG_DEVDIR=/tmp/.node-gyp",
-      "XDG_CONFIG_HOME=/tmp/.config",
+      "NPM_CONFIG_CACHE=/var/lib/homebridge/tmp/.npm",
+      "NPM_CONFIG_DEVDIR=/var/lib/homebridge/tmp/.node-gyp",
+      "XDG_CONFIG_HOME=/var/lib/homebridge/tmp/.config",
+      "TMPDIR=/var/lib/homebridge/tmp",
+      "TEMP=/var/lib/homebridge/tmp",
+      "TMP=/var/lib/homebridge/tmp",
       "NODE_OPTIONS=--max-old-space-size=256",
       "UV_THREADPOOL_SIZE=4",
       "MDNS_INTERFACE=br-lan",
@@ -136,7 +139,7 @@
         "noexec",
         "nodev",
         "mode=1777",
-        "size=128m"
+        "size=32m"
       ]
     },
     {
