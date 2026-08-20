@@ -36,34 +36,6 @@ RUN apk add --no-cache \
     tini
 
 # ==========================================================
-# Install latest Node.js 24.x (musl build for Alpine)
-# ==========================================================
-RUN set -eux; \
-    ARCH="$(uname -m)"; \
-    case "$ARCH" in \
-        aarch64) NODE_ARCH="arm64" ;; \
-        x86_64) NODE_ARCH="x64" ;; \
-        *) echo "Unsupported architecture: $ARCH"; exit 1 ;; \
-    esac; \
-    \
-    NODE_VERSION="$( \
-        curl -fsSL https://unofficial-builds.nodejs.org/download/release/index.tab \
-        | awk -v arch="linux-${NODE_ARCH}-musl" '$1 ~ /^v24\./ && $0 ~ arch { print $1; exit }' \
-    )"; \
-    \
-    TARBALL="node-${NODE_VERSION}-linux-${NODE_ARCH}-musl.tar.xz"; \
-    BASE_URL="https://unofficial-builds.nodejs.org/download/release/${NODE_VERSION}"; \
-    \
-    curl -fsSL "${BASE_URL}/${TARBALL}" -o "/tmp/${TARBALL}"; \
-    curl -fsSL "${BASE_URL}/SHASUMS256.txt" -o "/tmp/SHASUMS256.txt"; \
-    \
-    cd /tmp; \
-    grep " ${TARBALL}\$" SHASUMS256.txt | sha256sum -c -; \
-    \
-    tar -xJ -f "/tmp/${TARBALL}" --strip-components=1 -C /usr/local; \
-    rm -f "/tmp/${TARBALL}" /tmp/SHASUMS256.txt
-
-# ==========================================================
 # Avahi & DBus run directory setup
 # ==========================================================
 RUN mkdir -p /var/run/dbus /var/run/avahi-daemon \
@@ -106,17 +78,24 @@ EOF
 RUN chmod 0755 /usr/bin/sudo
 
 # ==========================================================
-# Global PATH Profile Setup
+# Writable npm runtime directories (symlink /root/.npm to /tmp)
 # ==========================================================
-RUN echo 'export PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"' > /etc/profile.d/node.sh \
- && chmod +x /etc/profile.d/node.sh
+RUN mkdir -p \
+    /tmp/.npm \
+    /tmp/.config \
+    /tmp/.node-gyp \
+ && rm -rf /root/.npm /root/.config \
+ && ln -s /tmp/.npm /root/.npm \
+ && ln -s /tmp/.config /root/.config
 
 # ==========================================================
-# NPM Config & Global Paths Target Integration (No unsafe-perm / No NODE_PATH)
+# Global Node/npm environment & Known-Working Configs
 # ==========================================================
 ENV NPM_CONFIG_PREFIX=/usr/local \
+    NODE_PATH=/usr/local/lib/node_modules \
+    npm_config_unsafe_perm=true \
     PYTHON=/usr/bin/python3 \
-    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
+    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/sbin:/bin
 
 RUN npm config set prefix /usr/local \
  && npm config set update-notifier false \
@@ -127,7 +106,7 @@ RUN npm config set prefix /usr/local \
 # ==========================================================
 # Install Homebridge stack globally
 # ==========================================================
-RUN npm install -g \
+RUN npm install -g --unsafe-perm \
     homebridge@${HOMEBRIDGE_VERSION} \
     homebridge-config-ui-x@${CONFIG_UI_VERSION} \
  && npm cache clean --force
@@ -137,11 +116,10 @@ RUN npm install -g \
 # ==========================================================
 RUN mkdir -p \
     /var/lib/homebridge \
+    /var/lib/homebridge/node_modules \
     /var/lib/homebridge/persist \
     /var/lib/homebridge/accessories \
-    /var/lib/homebridge/tmp/.npm \
-    /var/lib/homebridge/tmp/.config \
-    /var/lib/homebridge/tmp/.node-gyp
+ && ln -sf /var/lib/homebridge/node_modules /var/lib/homebridge/plugins
 
 # ==========================================================
 # HARD VALIDATION
@@ -159,10 +137,9 @@ RUN set -eux; \
 ENV HOME=/root \
     TZ=UTC \
     NODE_ENV=production \
-    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin \
-    NPM_CONFIG_CACHE=/var/lib/homebridge/tmp/.npm \
-    NPM_CONFIG_DEVDIR=/var/lib/homebridge/tmp/.node-gyp \
-    XDG_CONFIG_HOME=/var/lib/homebridge/tmp/.config
+    NPM_CONFIG_CACHE=/tmp/.npm \
+    NPM_CONFIG_DEVDIR=/tmp/.node-gyp \
+    XDG_CONFIG_HOME=/tmp/.config
 
 WORKDIR /var/lib/homebridge
 
@@ -170,4 +147,4 @@ EXPOSE 8581
 
 ENTRYPOINT ["/sbin/tini", "-g", "--"]
 
-CMD ["/bin/sh", "-c", "mkdir -p /var/lib/homebridge/persist /var/lib/homebridge/accessories /var/lib/homebridge/tmp/.npm /var/lib/homebridge/tmp/.node-gyp /var/lib/homebridge/tmp/.config; while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /usr/local/lib/node_modules; RC=$?; echo \"$(date) Homebridge exited with code ${RC} - restarting in 3s\"; sleep 3; done"]
+CMD ["/bin/sh", "-c", "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /usr/local/lib/node_modules; RC=$?; echo \"$(date) Homebridge exited with code ${RC} - restarting in 3s\"; sleep 3; done"]
