@@ -15,6 +15,8 @@ LABEL org.opencontainers.image.title="openwrt-uxc-homebridge" \
 RUN apk add --no-cache \
     curl \
     xz \
+    gzip \
+    file \
     tzdata \
     ca-certificates \
     avahi \
@@ -104,19 +106,15 @@ EOF
 RUN chmod 0755 /usr/bin/sudo
 
 # ==========================================================
-# Global PATH & Profile Environment Fixes
-# Ensures /usr/local/bin is permanently locked into system profile
+# Global PATH Profile Setup
 # ==========================================================
 RUN echo 'export PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"' > /etc/profile.d/node.sh \
- && echo 'export NODE_PATH="/usr/local/lib/node_modules"' >> /etc/profile.d/node.sh \
  && chmod +x /etc/profile.d/node.sh
 
 # ==========================================================
-# NPM Config & Global Paths Target Integration
+# NPM Config & Global Paths Target Integration (No unsafe-perm / No NODE_PATH)
 # ==========================================================
 ENV NPM_CONFIG_PREFIX=/usr/local \
-    NODE_PATH=/usr/local/lib/node_modules \
-    npm_config_unsafe_perm=true \
     PYTHON=/usr/bin/python3 \
     PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
 
@@ -129,7 +127,7 @@ RUN npm config set prefix /usr/local \
 # ==========================================================
 # Install Homebridge stack globally
 # ==========================================================
-RUN npm install -g --unsafe-perm \
+RUN npm install -g \
     homebridge@${HOMEBRIDGE_VERSION} \
     homebridge-config-ui-x@${CONFIG_UI_VERSION} \
  && npm cache clean --force
@@ -162,7 +160,6 @@ ENV HOME=/root \
     TZ=UTC \
     NODE_ENV=production \
     PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin \
-    NODE_PATH=/usr/local/lib/node_modules \
     NPM_CONFIG_CACHE=/var/lib/homebridge/tmp/.npm \
     NPM_CONFIG_DEVDIR=/var/lib/homebridge/tmp/.node-gyp \
     XDG_CONFIG_HOME=/var/lib/homebridge/tmp/.config
