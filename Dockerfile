@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
 
+# Using node:24-alpine for latest ARM64 builds
 FROM node:24-alpine
 
 ARG HOMEBRIDGE_VERSION=latest
@@ -13,17 +14,12 @@ LABEL org.opencontainers.image.title="openwrt-uxc-homebridge" \
 # System dependencies & Tini PID 1 Engine
 # ==========================================================
 RUN apk add --no-cache \
-    curl \
-    xz \
-    gzip \
-    file \
     tzdata \
     ca-certificates \
-    avahi \
     avahi-compat-libdns_sd \
-    dbus \
     libstdc++ \
     libc6-compat \
+    curl \
     ffmpeg \
     python3 \
     make \
@@ -36,13 +32,10 @@ RUN apk add --no-cache \
     tini
 
 # ==========================================================
-# Avahi & DBus run directory setup
-# ==========================================================
-RUN mkdir -p /var/run/dbus /var/run/avahi-daemon \
- && chown -R root:root /var/run/dbus /var/run/avahi-daemon
-
-# ==========================================================
 # UXC FIX: Replace sudo binary with robust option-stripping wrapper
+# Bypasses setresuid() capability/seccomp restrictions.
+# Intentionally drops flags like -u, -g, -E to force execution as root.
+# Validates that a target command is provided before executing.
 # ==========================================================
 RUN rm -f /usr/bin/sudo \
  && cat > /usr/bin/sudo <<'EOF'
@@ -78,24 +71,23 @@ EOF
 RUN chmod 0755 /usr/bin/sudo
 
 # ==========================================================
-# Writable npm runtime directories (symlink /root/.npm to /tmp)
+# READ-ONLY / OVERLAY ROOTFS FIX: Redirect npm cache/config/build to /tmp
+# Pre-creates directories and redirects /root/.npm and /root/.config
+# to the writable /tmp mount preventing ENOENT mkdir errors.
 # ==========================================================
-RUN mkdir -p \
-    /tmp/.npm \
-    /tmp/.config \
-    /tmp/.node-gyp \
+RUN mkdir -p /tmp/.npm /tmp/.config /tmp/.node-gyp \
  && rm -rf /root/.npm /root/.config \
  && ln -s /tmp/.npm /root/.npm \
  && ln -s /tmp/.config /root/.config
 
 # ==========================================================
-# Global Node/npm environment & Known-Working Configs
+# CRITICAL FIX:
+# Ensure deterministic npm global install location and module path
 # ==========================================================
 ENV NPM_CONFIG_PREFIX=/usr/local \
     NODE_PATH=/usr/local/lib/node_modules \
     npm_config_unsafe_perm=true \
-    PYTHON=/usr/bin/python3 \
-    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/sbin:/bin
+    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin
 
 RUN npm config set prefix /usr/local \
  && npm config set update-notifier false \
@@ -104,7 +96,7 @@ RUN npm config set prefix /usr/local \
  && npm cache verify
 
 # ==========================================================
-# Install Homebridge stack globally
+# Install Homebridge stack
 # ==========================================================
 RUN npm install -g --unsafe-perm \
     homebridge@${HOMEBRIDGE_VERSION} \
@@ -112,7 +104,22 @@ RUN npm install -g --unsafe-perm \
  && npm cache clean --force
 
 # ==========================================================
-# Persistent mount layout target setup (/var/lib/homebridge)
+# HARD VALIDATION (fail fast if install breaks)
+# ==========================================================
+RUN set -eux; \
+    test -f /usr/local/lib/node_modules/homebridge/package.json; \
+    test -f /usr/local/lib/node_modules/homebridge-config-ui-x/package.json; \
+    command -v homebridge; \
+    command -v hb-service; \
+    node -e "console.log('Node.js Version:', process.version)"; \
+    node -e "console.log('Homebridge OK:', require('/usr/local/lib/node_modules/homebridge/package.json').version)"; \
+    node -e "console.log('UI OK:', require('/usr/local/lib/node_modules/homebridge-config-ui-x/package.json').version)"
+
+# ==========================================================
+# Create explicit mount points for persistent storage
+# LINK FIX: Symlink /var/lib/homebridge/plugins -> node_modules
+# guarantees backward compatibility whether plugins are searched 
+# via -P or standard local node_modules resolution.
 # ==========================================================
 RUN mkdir -p \
     /var/lib/homebridge \
@@ -120,16 +127,6 @@ RUN mkdir -p \
     /var/lib/homebridge/persist \
     /var/lib/homebridge/accessories \
  && ln -sf /var/lib/homebridge/node_modules /var/lib/homebridge/plugins
-
-# ==========================================================
-# HARD VALIDATION
-# ==========================================================
-RUN set -eux; \
-    test -f /usr/local/lib/node_modules/homebridge/package.json; \
-    test -f /usr/local/lib/node_modules/homebridge-config-ui-x/package.json; \
-    command -v homebridge; \
-    command -v hb-service; \
-    node -e "console.log('Homebridge OK:', require('/usr/local/lib/node_modules/homebridge/package.json').version)"
 
 # ==========================================================
 # Runtime Environment & Container Launch
@@ -143,8 +140,13 @@ ENV HOME=/root \
 
 WORKDIR /var/lib/homebridge
 
+# EXPOSE UI PORT
 EXPOSE 8581
 
+# PID 1 INIT ENGINE:
+# Reaps zombie child processes (FFmpeg, Python, BLE scanners) and forwards SIGTERM cleanly
 ENTRYPOINT ["/sbin/tini", "-g", "--"]
 
-CMD ["/bin/sh", "-c", "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge; RC=$?; echo \"$(date) Homebridge exited with code ${RC} - restarting in 3s\"; sleep 3; done"]
+# RUNTIME LAUNCH COMMAND:
+# Runs hb-service inside a fail-safe auto-restart loop
+CMD ["/bin/sh", "-c", "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"]
