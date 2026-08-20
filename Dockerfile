@@ -106,7 +106,6 @@ RUN chmod 0755 /usr/bin/sudo
 # NPM Config & Global Paths Target Integration
 # ==========================================================
 ENV NPM_CONFIG_PREFIX=/usr/local \
-    NODE_PATH=/var/lib/homebridge/node_modules:/usr/local/lib/node_modules \
     npm_config_unsafe_perm=true \
     PYTHON=/usr/bin/python3 \
     PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
@@ -130,7 +129,6 @@ RUN npm install -g --unsafe-perm \
 # ==========================================================
 RUN mkdir -p \
     /var/lib/homebridge \
-    /var/lib/homebridge/node_modules \
     /var/lib/homebridge/persist \
     /var/lib/homebridge/accessories \
     /var/lib/homebridge/tmp/.npm \
@@ -148,39 +146,6 @@ RUN set -eux; \
     node -e "console.log('Homebridge OK:', require('/usr/local/lib/node_modules/homebridge/package.json').version)"
 
 # ==========================================================
-# Inline Entrypoint Script Generation
-# ==========================================================
-RUN cat > /usr/local/bin/entrypoint.sh <<'EOF'
-#!/bin/sh
-
-HOMEBRIDGE_DIR="/var/lib/homebridge"
-LOCAL_HB_PKG="$HOMEBRIDGE_DIR/node_modules/homebridge"
-
-mkdir -p "$HOMEBRIDGE_DIR/node_modules" \
-         "$HOMEBRIDGE_DIR/persist" \
-         "$HOMEBRIDGE_DIR/accessories" \
-         "$HOMEBRIDGE_DIR/tmp/.npm" \
-         "$HOMEBRIDGE_DIR/tmp/.config" \
-         "$HOMEBRIDGE_DIR/tmp/.node-gyp"
-
-if [ -f "$LOCAL_HB_PKG/package.json" ]; then
-    if [ "$(node -p "require('$LOCAL_HB_PKG/package.json').name" 2>/dev/null)" = "homebridge" ]; then
-        echo "==> Removing redundant local Homebridge package..."
-        rm -rf "$LOCAL_HB_PKG"
-    fi
-fi
-
-while true; do
-    /usr/local/bin/hb-service run --allow-root -U "$HOMEBRIDGE_DIR" -P "$HOMEBRIDGE_DIR/node_modules"
-    RC=$?
-    echo "$(date) Homebridge exited with code ${RC} - restarting in 3s"
-    sleep 3
-done
-EOF
-
-RUN chmod +x /usr/local/bin/entrypoint.sh
-
-# ==========================================================
 # Runtime Environment & Container Launch
 # ==========================================================
 ENV HOME=/root \
@@ -194,4 +159,6 @@ WORKDIR /var/lib/homebridge
 
 EXPOSE 8581
 
-ENTRYPOINT ["/sbin/tini", "-g", "--", "/usr/local/bin/entrypoint.sh"]
+ENTRYPOINT ["/sbin/tini", "-g", "--"]
+
+CMD ["/bin/sh", "-c", "mkdir -p /var/lib/homebridge/persist /var/lib/homebridge/accessories /var/lib/homebridge/tmp/.npm /var/lib/homebridge/tmp/.node-gyp /var/lib/homebridge/tmp/.config; while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /usr/local/lib/node_modules; RC=$?; echo \"$(date) Homebridge exited with code ${RC} - restarting in 3s\"; sleep 3; done"]
