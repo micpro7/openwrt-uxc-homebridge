@@ -71,7 +71,7 @@ jobs:
           tar -xpf rootfs.tar -C bundle/rootfs --owner=0 --group=0 --numeric-owner --same-permissions
           rm -f rootfs.tar
 
-          # Strip unnecessary OS caches & docs only (Preserving node_modules intact during debugging)
+          # Strip unnecessary OS caches & docs
           rm -rf bundle/rootfs/usr/share/man \
                  bundle/rootfs/usr/share/doc \
                  bundle/rootfs/var/cache/apk/* \
