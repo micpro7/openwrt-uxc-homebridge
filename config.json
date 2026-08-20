@@ -2,8 +2,8 @@
   "ociVersion": "1.0.2",
   "hostname": "homebridge",
   "annotations": {
-    "org.opencontainers.image.source": "https://github.com/micpro7/HomeBridge-UXC",
-    "io.homebridge.plugin-path": "/var/lib/homebridge/node_modules",
+    "org.opencontainers.image.source": "https://github.com/micpro7/openwrt-uxc-homebridge",
+    "io.homebridge.node-path": "/usr/local/bin",
     "io.homebridge.storage-path": "/var/lib/homebridge",
     "io.homebridge.config-path": "/var/lib/homebridge/config.json",
     "io.homebridge.plugin-path": "/usr/local/lib/node_modules"
