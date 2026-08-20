@@ -7,7 +7,7 @@
     "io.homebridge.node-path": "/usr/local/bin",
     "io.homebridge.storage-path": "/var/lib/homebridge",
     "io.homebridge.config-path": "/var/lib/homebridge/config.json",
-    "io.homebridge.plugin-path": "/var/lib/homebridge/node_modules"
+    "io.homebridge.plugin-path": "/usr/local/lib/node_modules"
   },
   "process": {
     "terminal": false,
@@ -21,7 +21,7 @@
       "--",
       "/bin/sh",
       "-c",
-      "mkdir -p \\\n    /var/lib/homebridge/node_modules \\\n    /var/lib/homebridge/persist \\\n    /var/lib/homebridge/accessories \\\n    /var/lib/homebridge/tmp/.npm \\\n    /var/lib/homebridge/tmp/.node-gyp \\\n    /var/lib/homebridge/tmp/.config\n\nwhile true; do\n    /usr/local/bin/hb-service run \\\n        --allow-root \\\n        -U /var/lib/homebridge \\\n        -P /var/lib/homebridge/node_modules\n\n    RC=$?\n    echo \"$(date) Homebridge exited with code ${RC} - restarting in 3s\"\n    sleep 3\ndone"
+      "mkdir -p \\\n    /var/lib/homebridge/persist \\\n    /var/lib/homebridge/accessories \\\n    /var/lib/homebridge/tmp/.npm \\\n    /var/lib/homebridge/tmp/.node-gyp \\\n    /var/lib/homebridge/tmp/.config\n\nwhile true; do\n    /usr/local/bin/hb-service run \\\n        --allow-root \\\n        -U /var/lib/homebridge \\\n        -P /usr/local/lib/node_modules\n\n    RC=$?\n    echo \"$(date) Homebridge exited with code ${RC} - restarting in 3s\"\n    sleep 3\ndone"
     ],
     "env": [
       "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
@@ -30,7 +30,6 @@
       "TZ=UTC",
       "NODE_ENV=production",
       "NPM_CONFIG_PREFIX=/usr/local",
-      "NODE_PATH=/var/lib/homebridge/node_modules:/usr/local/lib/node_modules",
       "npm_config_update_notifier=false",
       "NPM_CONFIG_CACHE=/var/lib/homebridge/tmp/.npm",
       "NPM_CONFIG_DEVDIR=/var/lib/homebridge/tmp/.node-gyp",
@@ -98,7 +97,7 @@
   },
   "root": {
     "path": "rootfs",
-    "readonly": true
+    "readonly": false
   },
   "mounts": [
     {
