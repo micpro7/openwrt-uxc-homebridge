@@ -104,6 +104,14 @@ EOF
 RUN chmod 0755 /usr/bin/sudo
 
 # ==========================================================
+# Global PATH & Profile Environment Fixes
+# Ensures /usr/local/bin is permanently locked into system profile
+# ==========================================================
+RUN echo 'export PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"' > /etc/profile.d/node.sh \
+ && echo 'export NODE_PATH="/usr/local/lib/node_modules"' >> /etc/profile.d/node.sh \
+ && chmod +x /etc/profile.d/node.sh
+
+# ==========================================================
 # NPM Config & Global Paths Target Integration
 # ==========================================================
 ENV NPM_CONFIG_PREFIX=/usr/local \
@@ -153,6 +161,7 @@ RUN set -eux; \
 ENV HOME=/root \
     TZ=UTC \
     NODE_ENV=production \
+    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin \
     NODE_PATH=/usr/local/lib/node_modules \
     NPM_CONFIG_CACHE=/var/lib/homebridge/tmp/.npm \
     NPM_CONFIG_DEVDIR=/var/lib/homebridge/tmp/.node-gyp \
