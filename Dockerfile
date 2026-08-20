@@ -21,6 +21,7 @@ RUN apk add --no-cache \
     avahi-compat-libdns_sd \
     dbus \
     libstdc++ \
+    libc6-compat \
     ffmpeg \
     python3 \
     make \
@@ -106,6 +107,7 @@ RUN chmod 0755 /usr/bin/sudo
 # NPM Config & Global Paths Target Integration
 # ==========================================================
 ENV NPM_CONFIG_PREFIX=/usr/local \
+    NODE_PATH=/usr/local/lib/node_modules \
     npm_config_unsafe_perm=true \
     PYTHON=/usr/bin/python3 \
     PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
@@ -151,6 +153,7 @@ RUN set -eux; \
 ENV HOME=/root \
     TZ=UTC \
     NODE_ENV=production \
+    NODE_PATH=/usr/local/lib/node_modules \
     NPM_CONFIG_CACHE=/var/lib/homebridge/tmp/.npm \
     NPM_CONFIG_DEVDIR=/var/lib/homebridge/tmp/.node-gyp \
     XDG_CONFIG_HOME=/var/lib/homebridge/tmp/.config
