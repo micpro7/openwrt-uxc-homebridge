@@ -1,63 +1,32 @@
 # syntax=docker/dockerfile:1
 
-# ==========================================================
-# Homebridge UXC - Alpine
-#
-# Architecture:
-#
-# /usr/local
-#   ├── Node.js
-#   ├── npm
-#   └── supporting Node runtime
-#
-# /var/lib/homebridge
-#   ├── Homebridge
-#   ├── Config UI X
-#   ├── user plugins
-#   ├── config.json
-#   ├── persist/
-#   └── accessories/
-#
-# The entire /var/lib/homebridge directory is persistent.
-# ==========================================================
-
 FROM node:24-alpine
 
 ARG HOMEBRIDGE_VERSION=latest
 ARG CONFIG_UI_VERSION=latest
 
-LABEL org.opencontainers.image.title="Homebridge UXC"
-LABEL org.opencontainers.image.description="Homebridge for OpenWrt UXC using Alpine Linux"
-LABEL org.opencontainers.image.source="https://github.com/micpro7/openwrt-uxc-homebridge"
-LABEL org.opencontainers.image.licenses="GPL-3.0"
-
-# ==========================================================
-# Runtime environment
-# ==========================================================
+LABEL org.opencontainers.image.title="openwrt-uxc-homebridge" \
+      org.opencontainers.image.description="Homebridge deployment for OpenWrt using native UXC containers" \
+      org.opencontainers.image.source="https://github.com/micpro7/homebridge-uxc"
 
 ENV NODE_ENV=production \
-    HOME=/var/lib/homebridge \
-    TZ=Europe/London \
-    USER=root \
-    NPM_CONFIG_PREFIX=/usr/local \
-    npm_config_prefix=/usr/local \
-    NPM_CONFIG_CACHE=/tmp/.npm \
-    npm_config_update_notifier=false \
-    NPM_CONFIG_UPDATE_NOTIFIER=false \
-    NPM_CONFIG_DEVDIR=/tmp/.node-gyp \
-    XDG_CONFIG_HOME=/tmp/.config \
-    NODE_PATH=/var/lib/homebridge/node_modules:/usr/local/lib/node_modules \
-    UIX_CUSTOM_PLUGIN_PATH=/var/lib/homebridge/node_modules \
-    UIX_CONFIG_PATH=/var/lib/homebridge/config.json \
-    UIX_STORAGE_PATH=/var/lib/homebridge \
-    UIX_STRICT_PLUGIN_RESOLUTION=1 \
     HOMEBRIDGE_CONFIG_UI=1 \
-    HOMEBRIDGE_CONFIG_UI_TERMINAL=1 \
-    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
+    HOMEBRIDGE_CONFIG_UI_VERSION=latest \
+    HOMEBRIDGE_STORAGE_PATH=/var/lib/homebridge \
+    HOMEBRIDGE_PLUGIN_PATH=/var/lib/homebridge/node_modules \
+    NPM_CONFIG_PREFIX=/usr/local \
+    NPM_CONFIG_CACHE=/tmp/.npm \
+    npm_config_prefix=/usr/local \
+    npm_config_cache=/tmp/.npm \
+    npm_config_update_notifier=false \
+    npm_config_fund=false \
+    npm_config_audit=false \
+    npm_config_loglevel=warn \
+    HOME=/var/lib/homebridge
 
-# ==========================================================
-# Alpine packages
-# ==========================================================
+# ---------------------------------------------------------------------------
+# System packages
+# ---------------------------------------------------------------------------
 
 RUN set -eux; \
     apk add --no-cache \
@@ -95,25 +64,39 @@ RUN set -eux; \
         dbus-libs \
         libc6-compat
 
-# ==========================================================
-# Temporary / persistent directories
-# ==========================================================
+# ---------------------------------------------------------------------------
+# Persistent Homebridge directories
+#
+# /opt/homebridge
+#   Immutable application installation inside the UXC rootfs.
+#
+# /var/lib/homebridge
+#   Persistent runtime/config/plugin storage.
+# ---------------------------------------------------------------------------
 
 RUN set -eux; \
     mkdir -p \
+        /opt/homebridge \
         /var/lib/homebridge \
         /var/lib/homebridge/node_modules \
+        /var/lib/homebridge/accessories \
+        /var/lib/homebridge/persist \
+        /var/lib/homebridge/log \
         /tmp/.npm \
         /tmp/.config \
         /tmp/.node-gyp; \
     chmod 1777 \
         /tmp/.npm \
         /tmp/.config \
-        /tmp/.node-gyp
+        /tmp/.node-gyp; \
+    chmod 0755 \
+        /opt/homebridge \
+        /var/lib/homebridge \
+        /var/lib/homebridge/node_modules
 
-# ==========================================================
-# Verify Node.js / npm
-# ==========================================================
+# ---------------------------------------------------------------------------
+# Keep the official Node installation completely intact in /usr/local
+# ---------------------------------------------------------------------------
 
 RUN set -eux; \
     node --version; \
@@ -121,15 +104,11 @@ RUN set -eux; \
     npm config set prefix /usr/local; \
     npm config set cache /tmp/.npm
 
-# ==========================================================
-# Install Homebridge into a temporary image location
-#
-# We DON'T install directly into /var/lib/homebridge here
-# because UXC mounts the persistent SSD over that directory.
-# ==========================================================
+# ---------------------------------------------------------------------------
+# Install Homebridge into /opt/homebridge
+# ---------------------------------------------------------------------------
 
 RUN set -eux; \
-    mkdir -p /opt/homebridge/node_modules; \
     cd /opt/homebridge; \
     printf '{\n  "private": true\n}\n' > package.json; \
     if [ "${HOMEBRIDGE_VERSION}" = "latest" ]; then \
@@ -138,9 +117,9 @@ RUN set -eux; \
         npm install --omit=dev "homebridge@${HOMEBRIDGE_VERSION}"; \
     fi
 
-# ==========================================================
-# Install Config UI X into the same npm tree
-# ==========================================================
+# ---------------------------------------------------------------------------
+# Install Homebridge Config UI X into the same application tree
+# ---------------------------------------------------------------------------
 
 RUN set -eux; \
     cd /opt/homebridge; \
@@ -150,172 +129,208 @@ RUN set -eux; \
         npm install --omit=dev "homebridge-config-ui-x@${CONFIG_UI_VERSION}"; \
     fi
 
-# ==========================================================
-# Verify temporary Homebridge installation
-# ==========================================================
+# ---------------------------------------------------------------------------
+# Verify the application installation
+# ---------------------------------------------------------------------------
 
 RUN set -eux; \
     test -d /opt/homebridge/node_modules/homebridge; \
     test -d /opt/homebridge/node_modules/homebridge-config-ui-x; \
     test -f /opt/homebridge/node_modules/homebridge/package.json; \
-    test -f /opt/homebridge/node_modules/homebridge-config-ui-x/package.json
+    test -f /opt/homebridge/node_modules/homebridge-config-ui-x/package.json; \
+    test -x /usr/local/bin/node; \
+    test -x /usr/local/bin/npm; \
+    HB_VER="$$(node -p "require('/opt/homebridge/node_modules/homebridge/package.json').version")"; \
+    UI_VER="$$(node -p "require('/opt/homebridge/node_modules/homebridge-config-ui-x/package.json').version")"; \
+    NODE_VER="$$(node --version)"; \
+    NPM_VER="$$(npm --version)"; \
+    printf '%s\n' \
+        "Node: $${NODE_VER}" \
+        "npm: $${NPM_VER}" \
+        "Homebridge: $${HB_VER}" \
+        "Config UI X: $${UI_VER}"
 
-# ==========================================================
-# Record installed versions
-# ==========================================================
+# ---------------------------------------------------------------------------
+# Installation manifest
+# ---------------------------------------------------------------------------
 
 RUN set -eux; \
-    HB_VER="$(node -p "require('/opt/homebridge/node_modules/homebridge/package.json').version")"; \
-    UI_VER="$(node -p "require('/opt/homebridge/node_modules/homebridge-config-ui-x/package.json').version")"; \
-    NODE_VER="$(node --version)"; \
+    HB_VER="$$(node -p "require('/opt/homebridge/node_modules/homebridge/package.json').version")"; \
+    UI_VER="$$(node -p "require('/opt/homebridge/node_modules/homebridge-config-ui-x/package.json').version")"; \
+    NODE_VER="$$(node --version)"; \
+    NPM_VER="$$(npm --version)"; \
     cat > /opt/homebridge/Docker.manifest <<EOF
-Homebridge UXC Alpine
-
-Node.js: ${NODE_VER}
-Homebridge: ${HB_VER}
-Homebridge Config UI X: ${UI_VER}
-Homebridge path: /var/lib/homebridge/node_modules/homebridge
-Config UI path: /var/lib/homebridge/node_modules/homebridge-config-ui-x
-Plugin path: /var/lib/homebridge/node_modules
+{
+  "node": "${NODE_VER}",
+  "npm": "${NPM_VER}",
+  "homebridge": "${HB_VER}",
+  "configUiX": "${UI_VER}",
+  "applicationPath": "/opt/homebridge",
+  "storagePath": "/var/lib/homebridge",
+  "pluginPath": "/var/lib/homebridge/node_modules"
+}
 EOF
 
-# ==========================================================
-# Bootstrap script
+# ---------------------------------------------------------------------------
+# UXC bootstrap
 #
-# The UXC SSD bind mount hides /var/lib/homebridge from the
-# image, so copy the bundled Homebridge installation there
-# on first boot.
-# ==========================================================
+# Creates the persistent Homebridge directory structure and compatibility
+# configuration every time the container starts.
+# ---------------------------------------------------------------------------
 
 RUN cat > /usr/local/bin/homebridge-uxc-bootstrap <<'EOF'
 #!/bin/sh
 set -eu
 
-SOURCE="/opt/homebridge/node_modules"
-TARGET="/var/lib/homebridge/node_modules"
+STORAGE="/var/lib/homebridge"
+PLUGIN_DIR="${STORAGE}/node_modules"
 
-echo "==> Homebridge UXC bootstrap"
+mkdir -p \
+    "${STORAGE}" \
+    "${PLUGIN_DIR}" \
+    "${STORAGE}/accessories" \
+    "${STORAGE}/persist" \
+    "${STORAGE}/log"
 
-mkdir -p "$TARGET"
+chmod 0755 "${STORAGE}" "${PLUGIN_DIR}"
 
-# ----------------------------------------------------------
-# Install Homebridge + Config UI X if they aren't already
-# present on persistent storage.
-# ----------------------------------------------------------
+# -------------------------------------------------------------------------
+# npm configuration
+#
+# Plugins installed from Config UI X must live in persistent storage.
+# -------------------------------------------------------------------------
 
-if [ ! -f "$TARGET/homebridge/package.json" ]; then
-    echo "==> Installing bundled Homebridge into persistent storage..."
+npm config set prefix /usr/local
+npm config set cache /tmp/.npm
 
-    cp -a "$SOURCE/homebridge" "$TARGET/"
+# Keep npm from attempting to use /root or another non-persistent location.
+export HOME="${STORAGE}"
+
+# -------------------------------------------------------------------------
+# Homebridge plugin search path
+# -------------------------------------------------------------------------
+
+export HOMEBRIDGE_PLUGIN_PATH="${PLUGIN_DIR}"
+
+# -------------------------------------------------------------------------
+# Create a local npm configuration for the persistent plugin tree.
+# -------------------------------------------------------------------------
+
+if [ ! -f "${STORAGE}/.npmrc" ]; then
+    cat > "${STORAGE}/.npmrc" <<'NPMRC'
+prefix=/usr/local
+cache=/tmp/.npm
+NPMRC
 fi
 
-if [ ! -f "$TARGET/homebridge-config-ui-x/package.json" ]; then
-    echo "==> Installing bundled Homebridge Config UI X..."
+# -------------------------------------------------------------------------
+# Make sure the plugin directory exists before Config UI X starts.
+# -------------------------------------------------------------------------
 
-    cp -a "$SOURCE/homebridge-config-ui-x" "$TARGET/"
-fi
+mkdir -p "${PLUGIN_DIR}"
 
-# ----------------------------------------------------------
-# Preserve the bundled npm metadata.
-# ----------------------------------------------------------
-
-if [ ! -f "/var/lib/homebridge/package.json" ]; then
-    cp -a /opt/homebridge/package.json /var/lib/homebridge/package.json
-fi
-
-if [ -f "/opt/homebridge/package-lock.json" ] &&
-   [ ! -f "/var/lib/homebridge/package-lock.json" ]; then
-    cp -a /opt/homebridge/package-lock.json \
-          /var/lib/homebridge/package-lock.json
-fi
-
-# ----------------------------------------------------------
-# Ensure expected permissions.
-# ----------------------------------------------------------
-
-chown -R root:root "$TARGET"
-
-chmod 0755 "$TARGET"
-
-echo "==> Homebridge installation:"
-node -e '
-const fs = require("fs");
-
-const hb = "/var/lib/homebridge/node_modules/homebridge/package.json";
-const ui = "/var/lib/homebridge/node_modules/homebridge-config-ui-x/package.json";
-
-console.log("Homebridge:", JSON.parse(fs.readFileSync(hb)).version);
-console.log("Config UI X:", JSON.parse(fs.readFileSync(ui)).version);
-console.log("Plugin path:", process.env.UIX_CUSTOM_PLUGIN_PATH);
-'
-
-echo "==> Bootstrap complete"
+exit 0
 EOF
 
 RUN chmod 0755 /usr/local/bin/homebridge-uxc-bootstrap
 
-# ==========================================================
-# Runtime launcher
-# ==========================================================
+# ---------------------------------------------------------------------------
+# Homebridge runtime wrapper
+#
+# IMPORTANT:
+# Do NOT use /usr/local/bin/hb-service.
+#
+# Homebridge itself is installed in /opt/homebridge and is launched directly.
+# ---------------------------------------------------------------------------
 
 RUN cat > /usr/local/bin/homebridge-uxc-run <<'EOF'
 #!/bin/sh
 set -eu
 
-export HOME=/var/lib/homebridge
-export UIX_CUSTOM_PLUGIN_PATH=/var/lib/homebridge/node_modules
-export UIX_CONFIG_PATH=/var/lib/homebridge/config.json
-export UIX_STORAGE_PATH=/var/lib/homebridge
-export UIX_STRICT_PLUGIN_RESOLUTION=1
+APP="/opt/homebridge"
+STORAGE="/var/lib/homebridge"
+PLUGIN_DIR="${STORAGE}/node_modules"
 
-export NODE_PATH=/var/lib/homebridge/node_modules:/usr/local/lib/node_modules
+export HOME="${STORAGE}"
+export NODE_ENV=production
 
-export PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
+export HOMEBRIDGE_STORAGE_PATH="${STORAGE}"
+export HOMEBRIDGE_PLUGIN_PATH="${PLUGIN_DIR}"
 
+# Node/npm remain the official installation from node:24-alpine.
+export PATH="/usr/local/bin:${PATH}"
+
+# Initialise persistent storage.
 /usr/local/bin/homebridge-uxc-bootstrap
 
-echo "==> Starting Homebridge"
-echo "    Node:        $(node --version)"
-echo "    Homebridge:  $(node -p "require('/var/lib/homebridge/node_modules/homebridge/package.json').version")"
-echo "    Config UI X: $(node -p "require('/var/lib/homebridge/node_modules/homebridge-config-ui-x/package.json').version")"
-echo "    Plugins:     /var/lib/homebridge/node_modules"
+# -------------------------------------------------------------------------
+# Homebridge executable
+# -------------------------------------------------------------------------
 
-exec /usr/local/bin/hb-service run \
-    --allow-root \
-    -U /var/lib/homebridge \
-    -P /var/lib/homebridge/node_modules
+HOMEBRIDGE_BIN="${APP}/node_modules/homebridge/bin/homebridge"
+
+if [ ! -x "${HOMEBRIDGE_BIN}" ]; then
+    echo "ERROR: Homebridge executable not found:"
+    echo "       ${HOMEBRIDGE_BIN}"
+    exit 1
+fi
+
+# -------------------------------------------------------------------------
+# Configuration directory
+# -------------------------------------------------------------------------
+
+CONFIG_ARGS="-U ${STORAGE}"
+
+# -------------------------------------------------------------------------
+# Execute Homebridge directly.
+#
+# Do not invoke hb-service because UXC is not a normal systemd environment
+# and hb-service is unnecessary for running Homebridge itself.
+# -------------------------------------------------------------------------
+
+exec /usr/local/bin/node \
+    "${HOMEBRIDGE_BIN}" \
+    -U "${STORAGE}"
 EOF
 
 RUN chmod 0755 /usr/local/bin/homebridge-uxc-run
 
-# ==========================================================
-# Final image verification
-# ==========================================================
+# ---------------------------------------------------------------------------
+# Compatibility symlink
+#
+# Some Homebridge tooling expects the application directory to be discoverable
+# through /usr/local/lib/node_modules. Do NOT copy Node or Homebridge there.
+# ---------------------------------------------------------------------------
+
+RUN set -eux; \
+    mkdir -p /usr/local/lib/node_modules; \
+    ln -sfn /opt/homebridge/node_modules/homebridge \
+        /usr/local/lib/node_modules/homebridge; \
+    ln -sfn /opt/homebridge/node_modules/homebridge-config-ui-x \
+        /usr/local/lib/node_modules/homebridge-config-ui-x
+
+# ---------------------------------------------------------------------------
+# Final image validation
+# ---------------------------------------------------------------------------
 
 RUN set -eux; \
     /usr/local/bin/node --version; \
     /usr/local/bin/npm --version; \
-    test -x /usr/local/bin/npm; \
     test -x /usr/local/bin/node; \
-    test -x /usr/local/bin/hb-service; \
+    test -x /usr/local/bin/npm; \
+    test -x /usr/local/bin/homebridge-uxc-bootstrap; \
+    test -x /usr/local/bin/homebridge-uxc-run; \
     test -d /opt/homebridge/node_modules/homebridge; \
-    test -d /opt/homebridge/node_modules/homebridge-config-ui-x
+    test -d /opt/homebridge/node_modules/homebridge-config-ui-x; \
+    test -x /opt/homebridge/node_modules/homebridge/bin/homebridge; \
+    test -d /var/lib/homebridge/node_modules
 
-# ==========================================================
-# Working directory
-# ==========================================================
+# ---------------------------------------------------------------------------
+# Runtime defaults
+# ---------------------------------------------------------------------------
 
 WORKDIR /var/lib/homebridge
 
-# ==========================================================
-# UXC entrypoint
-# ==========================================================
-
 ENTRYPOINT ["/sbin/tini", "-g", "--"]
 
-CMD ["/bin/sh", "-c", \
-     "while true; do \
-        /usr/local/bin/homebridge-uxc-run; \
-        echo \"$(date) Homebridge crashed - restarting in 3s\"; \
-        sleep 3; \
-      done"]
+CMD ["/usr/local/bin/homebridge-uxc-run"]
