@@ -6,7 +6,7 @@
     "io.homebridge.node-path": "/usr/local/bin",
     "io.homebridge.storage-path": "/var/lib/homebridge",
     "io.homebridge.config-path": "/var/lib/homebridge/config.json",
-    "io.homebridge.plugin-path": "/usr/local/lib/node_modules"
+    "io.homebridge.plugin-path": "/var/lib/homebridge/node_modules"
   },
   "process": {
     "terminal": false,
@@ -20,13 +20,13 @@
       "--",
       "/bin/sh",
       "-c",
-      "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"
+      "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/node_modules; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"
     ],
     "env": [
       "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
       "HOME=/root",
       "TERM=xterm",
-      "TZ=UTC",
+      "TZ=Europe/London",
       "NODE_ENV=production",
       "NPM_CONFIG_PREFIX=/usr/local",
       "NODE_PATH=/usr/local/lib/node_modules",
@@ -37,7 +37,8 @@
       "NODE_OPTIONS=--max-old-space-size=256",
       "UV_THREADPOOL_SIZE=4",
       "MDNS_INTERFACE=br-lan",
-      "HOMEBRIDGE_IP=0.0.0.0"
+      "HOMEBRIDGE_IP=0.0.0.0",
+      "UIX_CUSTOM_PLUGIN_PATH=/var/lib/homebridge/node_modules"
     ],
     "cwd": "/var/lib/homebridge",
     "capabilities": {
@@ -129,7 +130,7 @@
     {
       "destination": "/dev/shm",
       "type": "tmpfs",
-      "source": "shm",
+      "source": "tmpfs",
       "options": [
         "nosuid",
         "noexec",
@@ -161,7 +162,7 @@
     {
       "destination": "/var/lib/homebridge",
       "type": "none",
-      "source": "/mnt/usb/UXC/homebridge/data",
+      "source": "/mnt/SSD/UXC/homebridge/data",
       "options": [
         "rbind",
         "rw"
@@ -170,7 +171,7 @@
     {
       "destination": "/etc/resolv.conf",
       "type": "none",
-      "source": "/mnt/usb/UXC/homebridge/data/resolv.conf",
+      "source": "/mnt/SSD/UXC/homebridge/data/resolv.conf",
       "options": [
         "rbind",
         "ro"
