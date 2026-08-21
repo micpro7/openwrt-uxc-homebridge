@@ -1,16 +1,56 @@
 # ==============================================================================
-# ⚡ HOMEBRIDGE UXC ALPINE CONTAINER BLUEPRINT FOR OPENWRT (ARM64) ⚡
+# ⚡ HOMEBRIDGE UXC ALPINE CONTAINER
+#    Based on the architecture of the official Homebridge Docker image
+#    Adapted for OpenWrt UXC / ARM64
 # ==============================================================================
-# Base Image: Official Node.js 24 Alpine Runtime Core
-# Target Architecture: linux/arm64
+#
+# Base:
+#   Official Node.js 24 Alpine
+#
+# Runtime:
+#   Node.js 24
+#   Homebridge
+#   Homebridge Config UI X
+#   Alpine FFmpeg
+#
+# Persistent:
+#   /var/lib/homebridge
+#
+# Immutable application:
+#   /usr/local
+#
+# IMPORTANT:
+#   - Does NOT install ffmpeg-for-homebridge
+#   - Uses Alpine's normal /usr/bin/ffmpeg
+#   - Does NOT use s6-overlay
+#   - Does NOT use the Homebridge Debian package
+#
 # ==============================================================================
-FROM node:24-alpine
 
 # ==============================================================================
-# STAGE 1: SYSTEM DEPENDENCY PROVISIONING & RUNTIME TOOLCHAIN
+# BASE IMAGE
 # ==============================================================================
+
+FROM node:24-alpine
+
+ARG HOMEBRIDGE_VERSION=latest
+ARG CONFIG_UI_VERSION=latest
+
+# ==============================================================================
+# IMAGE METADATA
+# ==============================================================================
+
+LABEL org.opencontainers.image.title="Homebridge UXC Alpine"
+LABEL org.opencontainers.image.description="Homebridge for OpenWrt UXC using Node.js 24 Alpine"
+LABEL org.opencontainers.image.source="https://github.com/micpro7/openwrt-uxc-homebridge"
+LABEL org.opencontainers.image.licenses="GPL-3.0"
+
+# ==============================================================================
+# STAGE 1: SYSTEM RUNTIME + NATIVE NPM BUILD DEPENDENCIES
+# ==============================================================================
+
 RUN echo "========================================================" \
- && echo " 🔄 [Dockerfile Stage 1] Installing Alpine Packages..." \
+ && echo " 🔄 [Stage 1] Installing Alpine Runtime Dependencies" \
  && echo "========================================================"
 
 RUN apk add --no-cache \
@@ -30,60 +70,92 @@ RUN apk add --no-cache \
     openssh-client \
     tini
 
-# Validate system FFmpeg availability immediately
+# ------------------------------------------------------------------------------
+# Verify critical runtime components
+# ------------------------------------------------------------------------------
+
 RUN set -eux; \
+    command -v node; \
+    command -v npm; \
     command -v ffmpeg; \
+    command -v tini; \
+    node --version; \
+    npm --version; \
     ffmpeg -version | head -n 1; \
-    test -x /usr/bin/ffmpeg
+    test -x /usr/bin/ffmpeg; \
+    test -x /sbin/tini
 
-RUN echo "✅ Comprehensive runtime toolchain and system FFmpeg verified."
-RUN printf '\n\n\n'
-
+RUN echo "✅ Alpine runtime and FFmpeg verified."
 
 # ==============================================================================
-# STAGE 2: NPM ENVIRONMENT MATRICES & CACHE WORKAROUNDS
+# STAGE 2: ENVIRONMENT
 # ==============================================================================
+
 RUN echo "========================================================" \
- && echo " 📝 [Dockerfile Stage 2] Configuring NPM & Cache Workarounds..." \
+ && echo " 📝 [Stage 2] Configuring Runtime Environment" \
  && echo "========================================================"
 
-# Define authoritative core Node and NPM execution variables
-ENV NPM_CONFIG_PREFIX=/usr/local \
-    NODE_PATH=/usr/local/lib/node_modules \
-    npm_config_unsafe_perm=true \
+ENV USER=root \
     HOME=/root \
     TZ=UTC \
     NODE_ENV=production \
+    NPM_CONFIG_PREFIX=/usr/local \
+    NODE_PATH=/usr/local/lib/node_modules \
     NPM_CONFIG_CACHE=/tmp/.npm \
     NPM_CONFIG_DEVDIR=/tmp/.node-gyp \
     XDG_CONFIG_HOME=/tmp/.config \
-    UIX_CUSTOM_PLUGIN_PATH=/var/lib/homebridge/node_modules
+    UIX_CUSTOM_PLUGIN_PATH=/var/lib/homebridge/node_modules \
+    PATH=/usr/local/bin:/usr/local/sbin:/var/lib/homebridge/node_modules/.bin:/usr/bin:/usr/sbin:/sbin:/bin
 
-# Ensure global binary paths are accessible system-wide
-ENV PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin"
+# ------------------------------------------------------------------------------
+# NPM configuration
+# ------------------------------------------------------------------------------
 
-# Configure robust low-level NPM settings via environment and safe cache symlinks
 RUN npm config set prefix /usr/local && \
     npm config set cache /tmp/.npm && \
     npm config set update-notifier false && \
     npm config set fund false && \
     npm config set audit false
 
-RUN mkdir -p /tmp/.npm /tmp/.config /tmp/.node-gyp && \
-    rm -rf /root/.npm /root/.config && \
+# ------------------------------------------------------------------------------
+# Runtime writable locations
+# ------------------------------------------------------------------------------
+
+RUN mkdir -p \
+    /tmp/.npm \
+    /tmp/.config \
+    /tmp/.node-gyp \
+    /var/lib/homebridge \
+    /var/lib/homebridge/node_modules \
+    /var/lib/homebridge/accessories \
+    /var/lib/homebridge/persist
+
+# ------------------------------------------------------------------------------
+# Redirect root's npm/config directories to tmpfs-backed locations.
+#
+# /tmp is mounted as tmpfs by the UXC OCI configuration.
+# ------------------------------------------------------------------------------
+
+RUN rm -rf /root/.npm /root/.config && \
     ln -s /tmp/.npm /root/.npm && \
     ln -s /tmp/.config /root/.config
 
-RUN echo "✅ NPM workspace and cache redirection initialized."
-RUN printf '\n\n\n'
-
+RUN echo "✅ Runtime environment configured."
 
 # ==============================================================================
-# STAGE 3: ROBUST SUDO WRAPPER WORKAROUND FOR UXC PERMISSIONS
+# STAGE 3: UXC SUDO COMPATIBILITY
 # ==============================================================================
+
 RUN echo "========================================================" \
- && echo " 🛡️ [Dockerfile Stage 3] Injecting Robust Sudo Wrapper..." \
+ && echo " 🛡️ [Stage 3] Installing UXC-Compatible sudo Wrapper" \
  && echo "========================================================"
+
+# ------------------------------------------------------------------------------
+# UXC does not provide the setresuid/setresgid behaviour expected by normal sudo.
+#
+# Homebridge/plugin installers can still invoke sudo, so provide a root-only
+# compatibility wrapper that strips sudo options and executes the command.
+# ------------------------------------------------------------------------------
 
 RUN rm -f /usr/bin/sudo && \
     printf '%s\n' \
@@ -119,89 +191,163 @@ RUN rm -f /usr/bin/sudo && \
     > /usr/bin/sudo && \
     chmod 0755 /usr/bin/sudo
 
-RUN echo "✅ Sudo compatibility wrapper successfully installed."
-RUN printf '\n\n\n'
+RUN /usr/bin/sudo true
 
+RUN echo "✅ UXC sudo compatibility layer verified."
 
 # ==============================================================================
-# STAGE 4: CORE APPLICATION BINARY INSTALLATION & VALIDATION
+# STAGE 4: HOMEBRIDGE INSTALLATION
 # ==============================================================================
+
 RUN echo "========================================================" \
- && echo " 📥 [Dockerfile Stage 4] Installing Homebridge Stack..." \
+ && echo " 📥 [Stage 4] Installing Homebridge" \
  && echo "========================================================"
 
-ARG HOMEBRIDGE_VERSION=latest
-ARG CONFIG_UI_VERSION=latest
+RUN echo "[i] Homebridge version: ${HOMEBRIDGE_VERSION}" \
+ && echo "[i] Config UI X version: ${CONFIG_UI_VERSION}"
 
-RUN echo "[i] Target Homebridge Version: ${HOMEBRIDGE_VERSION}"
-RUN echo "[i] Target Config UI X Version: ${CONFIG_UI_VERSION}"
+# ------------------------------------------------------------------------------
+# Install Homebridge and Config UI X into immutable /usr/local.
+#
+# This is the Alpine equivalent of the official image's /opt/homebridge
+# application installation.
+# ------------------------------------------------------------------------------
 
-# Globally install core application suite into the immutable /usr/local boundary
 RUN npm install -g --unsafe-perm \
     homebridge@${HOMEBRIDGE_VERSION} \
     homebridge-config-ui-x@${CONFIG_UI_VERSION}
 
-# Hard validation checks to fail the build immediately if binaries or modules are malformed
+# ==============================================================================
+# STAGE 5: HOMEBRIDGE INSTALLATION VALIDATION
+# ==============================================================================
+
+RUN echo "========================================================" \
+ && echo " 🔍 [Stage 5] Validating Homebridge Installation" \
+ && echo "========================================================"
+
 RUN set -eux; \
-    test -f /usr/local/lib/node_modules/homebridge/package.json; \
-    test -f /usr/local/lib/node_modules/homebridge-config-ui-x/package.json; \
     command -v node; \
     command -v npm; \
     command -v homebridge; \
     command -v hb-service; \
-    node -e "console.log('Node.js Version:', process.version)"; \
+    test -x /usr/local/bin/node; \
+    test -x /usr/local/bin/npm; \
+    test -x /usr/local/bin/homebridge; \
+    test -x /usr/local/bin/hb-service; \
+    test -f /usr/local/lib/node_modules/homebridge/package.json; \
+    test -f /usr/local/lib/node_modules/homebridge-config-ui-x/package.json; \
+    node -e "console.log('Node.js:', process.version)"; \
     node -e "console.log('Homebridge:', require('/usr/local/lib/node_modules/homebridge/package.json').version)"; \
     node -e "console.log('Config UI X:', require('/usr/local/lib/node_modules/homebridge-config-ui-x/package.json').version)"
 
-RUN echo "✅ Homebridge core and UIX successfully built, locked, and verified."
-RUN printf '\n\n\n'
-
+RUN echo "✅ Homebridge installation verified."
 
 # ==============================================================================
-# STAGE 5: PERSISTENT DIRECTORY SCAFFOLDING
+# STAGE 6: FFmpeg RUNTIME CONTRACT
 # ==============================================================================
+
 RUN echo "========================================================" \
- && echo " 📂 [Dockerfile Stage 5] Scaffolding Runtime File Tree..." \
+ && echo " 🎥 [Stage 6] Validating System FFmpeg" \
  && echo "========================================================"
 
-# Initialize mount point targets with clean separation for persistent plugins
+# ------------------------------------------------------------------------------
+# IMPORTANT:
+#
+# We deliberately use Alpine's normal FFmpeg.
+#
+# We do NOT install:
+#
+#   ffmpeg-for-homebridge
+#
+# Plugins discover FFmpeg through PATH:
+#
+#   /usr/bin/ffmpeg
+# ------------------------------------------------------------------------------
+
+RUN set -eux; \
+    test -x /usr/bin/ffmpeg; \
+    /usr/bin/ffmpeg -version | head -n 1; \
+    /usr/bin/ffmpeg -hide_banner -filters >/dev/null
+
+RUN echo "✅ System FFmpeg available at /usr/bin/ffmpeg."
+
+# ==============================================================================
+# STAGE 7: PERSISTENT HOMEBRIDGE STORAGE
+# ==============================================================================
+
+RUN echo "========================================================" \
+ && echo " 📂 [Stage 7] Preparing Persistent Homebridge Storage" \
+ && echo "========================================================"
+
 RUN mkdir -p \
     /var/lib/homebridge \
     /var/lib/homebridge/node_modules \
-    /var/lib/homebridge/persist \
-    /var/lib/homebridge/accessories
+    /var/lib/homebridge/accessories \
+    /var/lib/homebridge/persist
 
-# Validate structural baseline rootfs setup
-RUN test -d /var/lib/homebridge && test -d /var/lib/homebridge/node_modules
+RUN set -eux; \
+    test -d /var/lib/homebridge; \
+    test -d /var/lib/homebridge/node_modules; \
+    test -d /var/lib/homebridge/accessories; \
+    test -d /var/lib/homebridge/persist
 
-RUN echo "✅ Base placeholder directories and plugin paths initialized cleanly."
-RUN printf '\n\n\n'
-
+RUN echo "✅ Persistent Homebridge directory tree prepared."
 
 # ==============================================================================
-# STAGE 6: RUNTIME EXECUTION PREREQUISITES & WATCHDOG
+# STAGE 8: WORKING DIRECTORY
 # ==============================================================================
-RUN echo "========================================================" \
- && echo " ⚙️ [Dockerfile Stage 6] Finalizing Execution Handlers..." \
- && echo "========================================================"
 
 WORKDIR /var/lib/homebridge
 
-# Utilize Tini as PID 1 to gracefully propagate POSIX signals and reap zombie processes
+# ==============================================================================
+# STAGE 9: CONTAINER ENTRYPOINT
+# ==============================================================================
+
+# Tini provides:
+#
+#   PID 1
+#   signal forwarding
+#   zombie reaping
+#
+# UXC supplies the actual container namespace/runtime.
+#
 ENTRYPOINT ["/sbin/tini", "-g", "--"]
 
-# Standard Homebridge runtime watchdog.
-# FFmpeg is provided by Alpine as /usr/bin/ffmpeg.
-CMD ["/bin/sh", "-c", "while true; do \
+# ==============================================================================
+# STAGE 10: HOMEBRIDGE RUNTIME
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Homebridge runs entirely from the immutable application installation while:
+#
+#   config.json
+#   accessories
+#   persistent data
+#   plugins
+#
+# live under /var/lib/homebridge.
+#
+# The -P option explicitly points Homebridge at the persistent plugin directory.
+#
+# No ffmpeg-for-homebridge bootstrap is performed.
+# ------------------------------------------------------------------------------
+
+CMD ["/bin/sh", "-c", "\
+while true; do \
+    echo \"$(date) 🚀 Starting Homebridge...\"; \
     /usr/local/bin/hb-service run \
         --allow-root \
         -U /var/lib/homebridge \
         -P /var/lib/homebridge/node_modules; \
-    echo \"$(date) ⚠️ Homebridge runtime exited - restarting watchdog in 3s...\"; \
+    EXIT_CODE=$?; \
+    echo \"$(date) ⚠️ Homebridge exited with code ${EXIT_CODE}; restarting in 3s...\"; \
     sleep 3; \
 done"]
 
-RUN echo "🎉 Unified Dockerfile recipe compiled and verified successfully."
 # ==============================================================================
-# BUILD PIPELINE COMPLETE 🚀
+# BUILD COMPLETE
 # ==============================================================================
+
+RUN echo "========================================================" \
+ && echo " 🎉 Homebridge UXC Alpine image prepared successfully" \
+ && echo "========================================================"
