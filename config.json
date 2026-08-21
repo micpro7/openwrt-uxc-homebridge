@@ -29,7 +29,7 @@
     ],
 
     "env": [
-      "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
+      "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin:/opt/homebridge/node_modules/.bin",
 
       "HOME=/root",
       "TERM=xterm",
@@ -38,16 +38,19 @@
       "USER=root",
       "NODE_ENV=production",
 
-      "NODE_PATH=/usr/local/lib/node_modules",
+      "NODE_PATH=/opt/homebridge/node_modules:/var/lib/homebridge/node_modules:/usr/local/lib/node_modules",
 
       "NPM_CONFIG_PREFIX=/usr/local",
       "npm_config_prefix=/usr/local",
 
       "NPM_CONFIG_CACHE=/tmp/.npm",
+      "npm_config_cache=/tmp/.npm",
+
       "npm_config_update_notifier=false",
       "NPM_CONFIG_UPDATE_NOTIFIER=false",
 
       "NPM_CONFIG_DEVDIR=/tmp/.node-gyp",
+      "npm_config_devdir=/tmp/.node-gyp",
 
       "XDG_CONFIG_HOME=/tmp/.config",
 
@@ -240,6 +243,9 @@
       },
       {
         "type": "cgroup"
+      },
+      {
+        "type": "mount"
       }
     ],
 
