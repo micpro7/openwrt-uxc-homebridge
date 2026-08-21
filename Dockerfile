@@ -30,7 +30,13 @@ RUN apk add --no-cache \
     openssh-client \
     tini
 
-RUN echo "✅ Comprehensive runtime toolchain and libraries installed."
+# Validate system FFmpeg availability immediately
+RUN set -eux; \
+    command -v ffmpeg; \
+    ffmpeg -version | head -n 1; \
+    test -x /usr/bin/ffmpeg
+
+RUN echo "✅ Comprehensive runtime toolchain and system FFmpeg verified."
 RUN printf '\n\n\n'
 
 
@@ -41,7 +47,7 @@ RUN echo "========================================================" \
  && echo " 📝 [Dockerfile Stage 2] Configuring NPM & Cache Workarounds..." \
  && echo "========================================================"
 
-# Define core Node and NPM execution variables including UIX custom plugin path
+# Define authoritative core Node and NPM execution variables
 ENV NPM_CONFIG_PREFIX=/usr/local \
     NODE_PATH=/usr/local/lib/node_modules \
     npm_config_unsafe_perm=true \
@@ -56,7 +62,7 @@ ENV NPM_CONFIG_PREFIX=/usr/local \
 # Ensure global binary paths are accessible system-wide
 ENV PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin"
 
-# Configure robust low-level NPM settings and safe cache symlinks
+# Configure robust low-level NPM settings via environment and safe cache symlinks
 RUN npm config set prefix /usr/local && \
     npm config set cache /tmp/.npm && \
     npm config set update-notifier false && \
@@ -184,8 +190,16 @@ WORKDIR /var/lib/homebridge
 # Utilize Tini as PID 1 to gracefully propagate POSIX signals and reap zombie processes
 ENTRYPOINT ["/sbin/tini", "-g", "--"]
 
-# Container runtime command loop with explicit persistent plugin discovery path (-P) and diagnostics
-CMD ["/bin/sh", "-c", "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/node_modules; echo \"$(date) ⚠️ Homebridge runtime exited - restarting watchdog in 3s...\"; sleep 3; done"]
+# Standard Homebridge runtime watchdog.
+# FFmpeg is provided by Alpine as /usr/bin/ffmpeg.
+CMD ["/bin/sh", "-c", "while true; do \
+    /usr/local/bin/hb-service run \
+        --allow-root \
+        -U /var/lib/homebridge \
+        -P /var/lib/homebridge/node_modules; \
+    echo \"$(date) ⚠️ Homebridge runtime exited - restarting watchdog in 3s...\"; \
+    sleep 3; \
+done"]
 
 RUN echo "🎉 Unified Dockerfile recipe compiled and verified successfully."
 # ==============================================================================
