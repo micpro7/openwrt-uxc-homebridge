@@ -5,19 +5,20 @@ on:
     inputs:
       homebridge_version:
         description: "Homebridge version"
-        default: "latest"
         required: false
+        default: "latest"
 
       config_ui_version:
         description: "Homebridge Config UI X version"
-        default: "latest"
         required: false
+        default: "latest"
 
   schedule:
     - cron: "0 6 * * 1"
 
   push:
-    branches: [main]
+    branches:
+      - main
     paths:
       - "Dockerfile"
       - "config.json"
@@ -27,11 +28,12 @@ permissions:
   contents: write
 
 concurrency:
-  group: build-release
+  group: build-homebridge-uxc
   cancel-in-progress: true
 
 jobs:
   build:
+    name: Build ARM64 Homebridge UXC
     runs-on: ubuntu-24.04-arm
 
     steps:
@@ -39,184 +41,308 @@ jobs:
       # ==========================================================
       # STEP 1: Checkout
       # ==========================================================
-
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v5
 
       # ==========================================================
       # STEP 2: Setup Docker Buildx
       # ==========================================================
-
       - name: Setup Buildx
         uses: docker/setup-buildx-action@v4
 
       # ==========================================================
       # STEP 3: Build Docker image
-      #         Then flatten it into a raw UXC rootfs
       # ==========================================================
-
-      - name: Build rootfs
+      - name: Build Homebridge image
+        env:
+          HB_VERSION_INPUT: ${{ inputs.homebridge_version }}
+          UI_VERSION_INPUT: ${{ inputs.config_ui_version }}
         run: |
           set -eux
+
+          HB_VERSION="${HB_VERSION_INPUT:-latest}"
+          UI_VERSION="${UI_VERSION_INPUT:-latest}"
+
+          echo "Homebridge version: ${HB_VERSION}"
+          echo "Config UI X version: ${UI_VERSION}"
 
           docker buildx build \
             --platform linux/arm64 \
             --tag homebridge-uxc:build \
-            --build-arg HOMEBRIDGE_VERSION="${{ inputs.homebridge_version || 'latest' }}" \
-            --build-arg CONFIG_UI_VERSION="${{ inputs.config_ui_version || 'latest' }}" \
+            --build-arg HOMEBRIDGE_VERSION="${HB_VERSION}" \
+            --build-arg CONFIG_UI_VERSION="${UI_VERSION}" \
             --cache-from type=gha \
             --cache-to type=gha,mode=max \
             --load \
             .
 
-          CONTAINER_ID="$(docker create homebridge-uxc:build)"
+      # ==========================================================
+      # STEP 4: Verify Docker image before exporting
+      # ==========================================================
+      - name: Verify Docker image
+        run: |
+          set -eux
 
-          docker export "$CONTAINER_ID" > rootfs.tar
+          CONTAINER_ID=$(docker create homebridge-uxc:build)
 
-          docker rm "$CONTAINER_ID"
+          cleanup() {
+            docker rm -f "${CONTAINER_ID}" >/dev/null 2>&1 || true
+          }
+
+          trap cleanup EXIT
+
+          docker start "${CONTAINER_ID}" >/dev/null
+
+          docker exec "${CONTAINER_ID}" \
+            /usr/local/bin/node --version
+
+          docker exec "${CONTAINER_ID}" \
+            /usr/local/bin/npm --version
+
+          docker exec "${CONTAINER_ID}" \
+            /bin/sh -c 'test -x /usr/local/bin/node'
+
+          docker exec "${CONTAINER_ID}" \
+            /bin/sh -c 'test -x /usr/local/bin/npm'
+
+          docker exec "${CONTAINER_ID}" \
+            /bin/sh -c 'test -x /usr/local/bin/homebridge'
+
+          docker exec "${CONTAINER_ID}" \
+            /bin/sh -c 'test -x /usr/local/bin/hb-service'
+
+          docker exec "${CONTAINER_ID}" \
+            /bin/sh -c 'test -d /usr/local/lib/node_modules/homebridge'
+
+          docker exec "${CONTAINER_ID}" \
+            /bin/sh -c 'test -d /usr/local/lib/node_modules/homebridge-config-ui-x'
+
+          docker exec "${CONTAINER_ID}" \
+            /bin/sh -c 'node -e "console.log(require(\"/usr/local/lib/node_modules/homebridge/package.json\").version)"'
+
+          docker exec "${CONTAINER_ID}" \
+            /bin/sh -c 'node -e "console.log(require(\"/usr/local/lib/node_modules/homebridge-config-ui-x/package.json\").version)"'
+
+          docker stop "${CONTAINER_ID}" >/dev/null
+
+          trap - EXIT
+          docker rm "${CONTAINER_ID}" >/dev/null
+
+      # ==========================================================
+      # STEP 5: Export flattened Docker rootfs
+      # ==========================================================
+      - name: Export raw rootfs
+        run: |
+          set -eux
+
+          CONTAINER_ID=$(docker create homebridge-uxc:build)
+
+          docker export \
+            "${CONTAINER_ID}" \
+            --output rootfs.tar
+
+          docker rm "${CONTAINER_ID}"
 
           test -s rootfs.tar
 
-      # ==========================================================
-      # STEP 4: Assemble OCI bundle
-      # ==========================================================
+          echo "Rootfs size:"
+          du -h rootfs.tar
 
+      # ==========================================================
+      # STEP 6: Assemble UXC bundle
+      # ==========================================================
       - name: Assemble UXC bundle
         run: |
           set -eux
 
+          rm -rf bundle
           mkdir -p bundle/rootfs
 
           tar \
             -xpf rootfs.tar \
             -C bundle/rootfs \
-            --owner=0 \
-            --group=0 \
             --numeric-owner \
             --same-permissions
 
           rm -f rootfs.tar
 
           # ------------------------------------------------------
-          # Remove unnecessary files
+          # Remove unnecessary Alpine caches/documentation
           # ------------------------------------------------------
-
           rm -rf \
             bundle/rootfs/usr/share/man \
             bundle/rootfs/usr/share/doc \
-            bundle/rootfs/var/cache/apk/* \
-            bundle/rootfs/tmp/*
+            bundle/rootfs/var/cache/apk/*
+
+          # Do NOT remove /tmp itself.
+          # The OCI config mounts a tmpfs over it.
 
           # ------------------------------------------------------
-          # Install OCI configuration
+          # Copy OCI configuration
           # ------------------------------------------------------
-
-          cp ./config.json bundle/config.json
+          cp config.json bundle/config.json
 
           # ------------------------------------------------------
           # Validate JSON
           # ------------------------------------------------------
-
           python3 -m json.tool \
             bundle/config.json \
             > /dev/null
 
+          # ------------------------------------------------------
+          # Validate required OCI fields
+          # ------------------------------------------------------
           python3 - <<'PY'
           import json
 
-          with open("bundle/config.json", "r") as f:
-              c = json.load(f)
+          with open("bundle/config.json", "r", encoding="utf-8") as f:
+              config = json.load(f)
 
           required = [
               "ociVersion",
               "process",
               "root",
               "mounts",
-              "linux"
+              "linux",
           ]
 
-          for key in required:
-              assert key in c, f"Missing OCI field: {key}"
+          for field in required:
+              if field not in config:
+                  raise SystemExit(f"Missing OCI field: {field}")
 
-          assert c["root"]["path"] == "rootfs"
+          assert config["root"]["path"] == "rootfs"
 
-          print("OCI config OK")
+          assert config["process"]["user"]["uid"] == 0
+          assert config["process"]["user"]["gid"] == 0
+
+          print("OCI configuration: OK")
           PY
 
-          # ======================================================
-          # Verify Node.js
-          # ======================================================
+      # ==========================================================
+      # STEP 7: Validate Homebridge installation
+      # ==========================================================
+      - name: Validate rootfs
+        run: |
+          set -eux
 
-          test -x bundle/rootfs/usr/local/bin/node
-          test -x bundle/rootfs/usr/local/bin/npm
+          ROOTFS="bundle/rootfs"
 
-          # ======================================================
-          # Verify Homebridge launchers
-          # ======================================================
+          # ------------------------------------------------------
+          # Node.js
+          # ------------------------------------------------------
+          test -x "${ROOTFS}/usr/local/bin/node"
+          test -x "${ROOTFS}/usr/local/bin/npm"
+          test -x "${ROOTFS}/usr/local/bin/npx"
 
-          test -e bundle/rootfs/usr/local/bin/hb-service
-          test -e bundle/rootfs/usr/local/bin/homebridge
+          # ------------------------------------------------------
+          # Homebridge executables
+          # ------------------------------------------------------
+          test -x "${ROOTFS}/usr/local/bin/homebridge"
+          test -x "${ROOTFS}/usr/local/bin/hb-service"
 
-          test -x bundle/rootfs/usr/local/bin/hb-service
-          test -x bundle/rootfs/usr/local/bin/homebridge
-
-          # ======================================================
-          # Verify Homebridge installation
-          #
-          # Homebridge is installed in /opt/homebridge.
-          # ======================================================
-
+          # ------------------------------------------------------
+          # Homebridge packages
+          # ------------------------------------------------------
           test -d \
-            bundle/rootfs/opt/homebridge/node_modules/homebridge
-
-          test -d \
-            bundle/rootfs/opt/homebridge/node_modules/homebridge-config-ui-x
+            "${ROOTFS}/usr/local/lib/node_modules/homebridge"
 
           test -f \
-            bundle/rootfs/opt/homebridge/node_modules/homebridge/package.json
+            "${ROOTFS}/usr/local/lib/node_modules/homebridge/package.json"
+
+          test -d \
+            "${ROOTFS}/usr/local/lib/node_modules/homebridge-config-ui-x"
 
           test -f \
-            bundle/rootfs/opt/homebridge/node_modules/homebridge-config-ui-x/package.json
+            "${ROOTFS}/usr/local/lib/node_modules/homebridge-config-ui-x/package.json"
 
-          # ======================================================
-          # Verify executable symlinks
-          # ======================================================
+          # ------------------------------------------------------
+          # Persistent runtime directory exists in rootfs
+          # but will be bind-mounted from SSD by UXC.
+          # ------------------------------------------------------
+          test -d "${ROOTFS}/var/lib/homebridge"
 
-          test -L bundle/rootfs/usr/local/bin/hb-service
-          test -L bundle/rootfs/usr/local/bin/homebridge
+          # ------------------------------------------------------
+          # Node version
+          # ------------------------------------------------------
+          NODE_VERSION=$(
+            "${ROOTFS}/usr/local/bin/node" --version
+          )
 
-          readlink \
-            bundle/rootfs/usr/local/bin/hb-service
+          echo "Node.js: ${NODE_VERSION}"
 
-          readlink \
-            bundle/rootfs/usr/local/bin/homebridge
+          # ------------------------------------------------------
+          # Homebridge version
+          # ------------------------------------------------------
+          HB_VERSION=$(
+            python3 -c \
+              "import json; print(json.load(open('${ROOTFS}/usr/local/lib/node_modules/homebridge/package.json'))['version'])"
+          )
 
-          # ======================================================
-          # Verify persistent Homebridge directory
-          # ======================================================
+          echo "Homebridge: ${HB_VERSION}"
 
-          test -d bundle/rootfs/var/lib/homebridge
-          test -d bundle/rootfs/var/lib/homebridge/node_modules
+          # ------------------------------------------------------
+          # Config UI X version
+          # ------------------------------------------------------
+          UI_VERSION=$(
+            python3 -c \
+              "import json; print(json.load(open('${ROOTFS}/usr/local/lib/node_modules/homebridge-config-ui-x/package.json'))['version'])"
+          )
 
-          # ======================================================
-          # Verify tini
-          # ======================================================
+          echo "Config UI X: ${UI_VERSION}"
 
-          test -x bundle/rootfs/sbin/tini
+          # ------------------------------------------------------
+          # Verify hb-service points to the correct installation
+          # ------------------------------------------------------
+          echo "hb-service:"
+          head -n 3 "${ROOTFS}/usr/local/bin/hb-service" || true
 
-          # ======================================================
-          # Verify helper scripts
-          # ======================================================
+          echo "Homebridge:"
+          head -n 3 "${ROOTFS}/usr/local/bin/homebridge" || true
 
-          test -x \
-            bundle/rootfs/usr/local/bin/homebridge-uxc-bootstrap
+      # ==========================================================
+      # STEP 8: Check OCI mounts
+      # ==========================================================
+      - name: Validate OCI mounts
+        run: |
+          set -eux
 
-          test -x \
-            bundle/rootfs/usr/local/bin/homebridge-uxc-run
+          python3 - <<'PY'
+          import json
 
-          # ======================================================
-          # Create final UXC bundle
-          # ======================================================
+          with open("bundle/config.json", "r", encoding="utf-8") as f:
+              c = json.load(f)
+
+          mounts = {
+              m["destination"]: m
+              for m in c.get("mounts", [])
+          }
+
+          assert "/var/lib/homebridge" in mounts, \
+              "Missing /var/lib/homebridge mount"
+
+          homebridge_mount = mounts["/var/lib/homebridge"]
+
+          assert homebridge_mount["source"] == \
+              "/mnt/SSD/UXC/homebridge/data"
+
+          assert "rw" in homebridge_mount.get("options", [])
+
+          print("Persistent Homebridge mount: OK")
+
+          assert "/tmp" in mounts
+          assert "/run" in mounts
+          assert "/dev" in mounts
+          assert "/proc" in mounts
+
+          print("Required OCI mounts: OK")
+          PY
+
+      # ==========================================================
+      # STEP 9: Create final UXC bundle
+      # ==========================================================
+      - name: Create UXC archive
+        run: |
+          set -eux
 
           tar \
             --numeric-owner \
@@ -226,15 +352,17 @@ jobs:
             -czf homebridge-arm64.tar.gz \
             -C bundle .
 
-      # ==========================================================
-      # STEP 5: Bundle sanity check
-      # ==========================================================
+          test -s homebridge-arm64.tar.gz
 
-      - name: Sanity check bundle
+          echo "Bundle:"
+          du -h homebridge-arm64.tar.gz
+
+      # ==========================================================
+      # STEP 10: Final archive sanity check
+      # ==========================================================
+      - name: Sanity check archive
         run: |
           set -eux
-
-          test -s homebridge-arm64.tar.gz
 
           tar -tzf homebridge-arm64.tar.gz \
             | grep -q '^config.json$'
@@ -243,157 +371,133 @@ jobs:
             | grep -q '^rootfs/usr/local/bin/node$'
 
           tar -tzf homebridge-arm64.tar.gz \
-            | grep -q '^rootfs/usr/local/bin/npm$'
+            | grep -q '^rootfs/usr/local/bin/homebridge$'
 
           tar -tzf homebridge-arm64.tar.gz \
             | grep -q '^rootfs/usr/local/bin/hb-service$'
 
           tar -tzf homebridge-arm64.tar.gz \
-            | grep -q '^rootfs/opt/homebridge/node_modules/homebridge/'
+            | grep -q '^rootfs/usr/local/lib/node_modules/homebridge/'
 
           tar -tzf homebridge-arm64.tar.gz \
-            | grep -q '^rootfs/opt/homebridge/node_modules/homebridge-config-ui-x/'
+            | grep -q '^rootfs/usr/local/lib/node_modules/homebridge-config-ui-x/'
 
-          tar -tzf homebridge-arm64.tar.gz \
-            | grep -q '^rootfs/sbin/tini$'
-
-          du -sh homebridge-arm64.tar.gz
+          echo "Archive validation: OK"
 
       # ==========================================================
-      # STEP 6: Extract metadata
+      # STEP 11: Determine versions
       # ==========================================================
-
       - name: Determine release metadata
         run: |
           set -eux
 
-          CURRENT_DATE="$(date +'%Y-%m-%d')"
+          ROOTFS="bundle/rootfs"
 
-          # ------------------------------------------------------
-          # Homebridge version
-          # ------------------------------------------------------
+          CURRENT_DATE=$(date -u +'%Y-%m-%d')
+          CURRENT_TIME=$(date -u +'%H%M')
 
-          HB_VER="$(
+          HB_VER=$(
             python3 -c \
-            "import json; print(json.load(open('bundle/rootfs/opt/homebridge/node_modules/homebridge/package.json'))['version'])"
-          )"
+              "import json; print(json.load(open('${ROOTFS}/usr/local/lib/node_modules/homebridge/package.json'))['version'])"
+          )
 
-          # ------------------------------------------------------
-          # Config UI X version
-          # ------------------------------------------------------
-
-          UI_VER="$(
+          UI_VER=$(
             python3 -c \
-            "import json; print(json.load(open('bundle/rootfs/opt/homebridge/node_modules/homebridge-config-ui-x/package.json'))['version'])"
-          )"
+              "import json; print(json.load(open('${ROOTFS}/usr/local/lib/node_modules/homebridge-config-ui-x/package.json'))['version'])"
+          )
 
-          # ------------------------------------------------------
-          # Alpine version
-          # ------------------------------------------------------
+          NODE_VER=$(
+            "${ROOTFS}/usr/local/bin/node" --version
+          )
 
-          if [ -f "bundle/rootfs/etc/os-release" ]; then
-            ALPINE_VER="$(
+          if [ -f "${ROOTFS}/etc/os-release" ]; then
+            ALPINE_VER=$(
               grep '^VERSION_ID=' \
-                bundle/rootfs/etc/os-release \
-                | cut -d'=' -f2 \
+                "${ROOTFS}/etc/os-release" \
+                | cut -d= -f2 \
                 | tr -d '"'
-            )"
+            )
           else
             ALPINE_VER="unknown"
           fi
 
-          # ------------------------------------------------------
-          # Node version
-          # ------------------------------------------------------
+          RELEASE_TAG="hb-${HB_VER}-alpine-${ALPINE_VER}-${CURRENT_DATE}-${CURRENT_TIME}"
 
-          NODE_VER="$(
-            bundle/rootfs/usr/local/bin/node --version
-          )"
+          echo "HB_VERSION=${HB_VER}" >> "${GITHUB_ENV}"
+          echo "UI_VERSION=${UI_VER}" >> "${GITHUB_ENV}"
+          echo "NODE_VERSION=${NODE_VER}" >> "${GITHUB_ENV}"
+          echo "ALPINE_VERSION=${ALPINE_VER}" >> "${GITHUB_ENV}"
 
-          # ------------------------------------------------------
-          # npm version
-          # ------------------------------------------------------
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> "${GITHUB_ENV}"
+          echo "RELEASE_NAME=Homebridge V${HB_VER} - ${CURRENT_DATE}" >> "${GITHUB_ENV}"
 
-          NPM_VER="$(
-            bundle/rootfs/usr/local/bin/npm --version
-          )"
-
-          # ------------------------------------------------------
-          # Release metadata
-          # ------------------------------------------------------
-
-          echo "RELEASE_NAME=Homebridge V${HB_VER}-${CURRENT_DATE}" >> "$GITHUB_ENV"
-
-          echo "BUILD_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
-
-          echo "HB_VERSION=${HB_VER}" >> "$GITHUB_ENV"
-
-          echo "UI_VERSION=${UI_VER}" >> "$GITHUB_ENV"
-
-          echo "ALPINE_VERSION=${ALPINE_VER}" >> "$GITHUB_ENV"
-
-          echo "NODE_VERSION=${NODE_VER}" >> "$GITHUB_ENV"
-
-          echo "NPM_VERSION=${NPM_VER}" >> "$GITHUB_ENV"
+          echo "Homebridge: ${HB_VER}"
+          echo "Config UI X: ${UI_VER}"
+          echo "Node.js: ${NODE_VER}"
+          echo "Alpine: ${ALPINE_VER}"
+          echo "Release tag: ${RELEASE_TAG}"
 
       # ==========================================================
-      # STEP 7: Publish GitHub Release
+      # STEP 12: Publish release
       # ==========================================================
-
-      - name: Publish release
+      - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ env.RELEASE_NAME }}
-          tag_name: latest
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
           make_latest: true
           fail_on_unmatched_files: true
-
           files: |
             homebridge-arm64.tar.gz
-
           body: |
-            # Homebridge UXC Bundle
+            # Homebridge UXC ARM64
 
-            ARM64 UXC bundle for OpenWrt.
+            Homebridge UXC bundle built for OpenWrt UXC.
 
             ## Versions
 
-            - Base OS: Alpine ${{ env.ALPINE_VERSION }}
-            - Architecture: ARM64
-            - Node.js: ${{ env.NODE_VERSION }}
-            - npm: ${{ env.NPM_VERSION }}
             - Homebridge: v${{ env.HB_VERSION }}
             - Homebridge Config UI X: v${{ env.UI_VERSION }}
+            - Node.js: ${{ env.NODE_VERSION }}
+            - Alpine Linux: ${{ env.ALPINE_VERSION }}
+            - Architecture: arm64
+            - Build commit: `${{ github.sha }}`
 
-            ## Installation layout
+            ## Installation
 
-            Node.js:
+            Extract `homebridge-arm64.tar.gz` into the UXC bundle directory.
 
-            `/usr/local`
+            The persistent Homebridge data directory is:
 
-            Homebridge application:
+            `/mnt/SSD/UXC/homebridge/data`
 
-            `/opt/homebridge`
-
-            Persistent Homebridge data:
+            The OCI configuration mounts that directory to:
 
             `/var/lib/homebridge`
 
-            Persistent plugins:
+            ## Runtime layout
 
-            `/var/lib/homebridge/node_modules`
+            Node.js:
 
-            ## Build
+            `/usr/local/bin/node`
 
-            - Commit: `${{ env.BUILD_SHA }}`
-            - Bundle: `homebridge-arm64.tar.gz`
+            Homebridge:
 
-            ## Runtime
+            `/usr/local/lib/node_modules/homebridge`
 
-            The UXC container runs:
+            Config UI X:
 
-            `/usr/local/bin/hb-service`
+            `/usr/local/lib/node_modules/homebridge-config-ui-x`
 
-            which points to the Homebridge installation under:
+            Persistent configuration/plugins:
 
-            `/opt/homebridge/node_modules/.bin/hb-service`
+            `/var/lib/homebridge`
+
+            ## Important
+
+            Homebridge and its built-in Config UI X installation are kept
+            inside the immutable UXC rootfs under `/usr/local`.
+
+            `/var/lib/homebridge` is reserved for persistent configuration,
+            cached data and user-installed plugins.
