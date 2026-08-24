@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
-# Using node:24-alpine for latest ARM64 builds
-FROM node:24-alpine
+# Using node:24-alpine3.22 for stable, reproducible ARM64 builds
+FROM node:24-alpine3.22
 
 ARG HOMEBRIDGE_VERSION=latest
 ARG CONFIG_UI_VERSION=latest
@@ -20,6 +20,7 @@ RUN apk add --no-cache \
     libstdc++ \
     libc6-compat \
     curl \
+    ffmpeg \
     python3 \
     make \
     g++ \
