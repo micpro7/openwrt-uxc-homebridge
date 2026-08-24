@@ -177,6 +177,11 @@
     }
   ],
   "linux": {
+    "resources": {
+      "memory": {
+        "limit": 536870912
+      }
+    },
     "namespaces": [
       { "type": "pid" },
       { "type": "ipc" },
