@@ -31,6 +31,22 @@ RUN apk add --no-cache \
     tini
 
 # ==========================================================
+# FFmpeg installation (Optimized for Homebridge on Alpine ARM64/x86_64)
+# ==========================================================
+RUN set -eux; \
+    ARCH=$(uname -m); \
+    if [ "$ARCH" = "aarch64" ]; then \
+        FFMPEG_ARCH="aarch64"; \
+    elif [ "$ARCH" = "x86_64" ]; then \
+        FFMPEG_ARCH="x86_64"; \
+    else \
+        echo "Unsupported architecture: $ARCH" && exit 1; \
+    fi; \
+    curl -Lf# "https://github.com/homebridge/ffmpeg-for-homebridge/releases/latest/download/ffmpeg-alpine-${FFMPEG_ARCH}.tar.gz" \
+    | tar xzf - -C / --no-same-owner; \
+    ffmpeg -version
+
+# ==========================================================
 # UXC FIX: Replace sudo binary with robust option-stripping wrapper
 # Bypasses setresuid() capability/seccomp restrictions.
 # Intentionally drops flags like -u, -g, -E to force execution as root.
