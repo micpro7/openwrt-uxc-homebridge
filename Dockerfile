@@ -1,172 +1,152 @@
-name: Build Homebridge UXC Bundle
+# syntax=docker/dockerfile:1
 
-on:
-  workflow_dispatch:
-    inputs:
-      homebridge_version:
-        default: "latest"
-        required: false
-      config_ui_version:
-        default: "latest"
-        required: false
+# Using node:24-alpine for latest ARM64 builds
+FROM node:24-alpine
 
-  schedule:
-    - cron: "0 6 * * 1"
+ARG HOMEBRIDGE_VERSION=latest
+ARG CONFIG_UI_VERSION=latest
 
-  push:
-    branches: [main]
-    paths:
-      - "Dockerfile"
-      - "config.json"
-      - ".github/workflows/build.yml"
+LABEL org.opencontainers.image.title="openwrt-uxc-homebridge" \
+      org.opencontainers.image.description="Homebridge deployment for OpenWrt using native UXC containers" \
+      org.opencontainers.image.source="https://github.com/micpro7/openwrt-uxc-homebridge"
 
-permissions:
-  contents: write
+# ==========================================================
+# System dependencies & Tini PID 1 Engine
+# ==========================================================
+RUN apk add --no-cache \
+    tzdata \
+    ca-certificates \
+    avahi-compat-libdns_sd \
+    libstdc++ \
+    libc6-compat \
+    curl \
+    ffmpeg \
+    python3 \
+    make \
+    g++ \
+    git \
+    linux-headers \
+    sudo \
+    bash \
+    openssh-client \
+    tini
 
-concurrency:
-  group: build-release
-  cancel-in-progress: true
+# ==========================================================
+# UXC FIX: Replace sudo binary with robust option-stripping wrapper
+# Bypasses setresuid() capability/seccomp restrictions.
+# Intentionally drops flags like -u, -g, -E to force execution as root.
+# Validates that a target command is provided before executing.
+# ==========================================================
+RUN rm -f /usr/bin/sudo \
+ && cat > /usr/bin/sudo <<'EOF'
+#!/bin/sh
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -n|-E|-H|-S|-k|-K|-b|-v)
+            shift
+            ;;
+        -u|-g|-C)
+            shift 2
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            shift
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
 
-jobs:
-  build:
-    runs-on: ubuntu-24.04-arm
+if [ $# -eq 0 ]; then
+    echo "sudo: no command specified" >&2
+    exit 1
+fi
 
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v5
+exec "$@"
+EOF
+RUN chmod 0755 /usr/bin/sudo
 
-      - name: Setup Buildx
-        uses: docker/setup-buildx-action@v4
+# ==========================================================
+# READ-ONLY / OVERLAY ROOTFS FIX: Redirect npm cache/config/build to /tmp
+# Pre-creates directories and redirects /root/.npm and /root/.config
+# to the writable /tmp mount preventing ENOENT mkdir errors.
+# ==========================================================
+RUN mkdir -p /tmp/.npm /tmp/.config /tmp/.node-gyp \
+ && rm -rf /root/.npm /root/.config \
+ && ln -s /tmp/.npm /root/.npm \
+ && ln -s /tmp/.config /root/.config
 
-      # ==========================================================
-      # STEP 1: Build image and export raw rootfs tarball
-      # ==========================================================
-      - name: Build rootfs (Docker)
-        run: |
-          set -eux
+# ==========================================================
+# CRITICAL FIX:
+# Ensure deterministic npm global install location and module path
+# ==========================================================
+ENV NPM_CONFIG_PREFIX=/usr/local \
+    NODE_PATH=/usr/local/lib/node_modules \
+    npm_config_unsafe_perm=true \
+    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin
 
-          docker buildx build \
-            --platform linux/arm64 \
-            --tag homebridge-uxc:build \
-            --build-arg HOMEBRIDGE_VERSION="${{ inputs.homebridge_version || 'latest' }}" \
-            --build-arg CONFIG_UI_VERSION="${{ inputs.config_ui_version || 'latest' }}" \
-            --cache-from type=gha \
-            --cache-to type=gha,mode=max \
-            --load \
-            .
+RUN npm config set prefix /usr/local \
+ && npm config set update-notifier false \
+ && npm config set audit false \
+ && npm config set fund false \
+ && npm cache verify
 
-          CONTAINER_ID=$(docker create homebridge-uxc:build)
-          docker export "$CONTAINER_ID" > rootfs.tar
-          docker rm "$CONTAINER_ID"
+# ==========================================================
+# Install Homebridge stack
+# ==========================================================
+RUN npm install -g --unsafe-perm \
+    homebridge@${HOMEBRIDGE_VERSION} \
+    homebridge-config-ui-x@${CONFIG_UI_VERSION} \
+ && npm cache clean --force
 
-      # ==========================================================
-      # STEP 2: Assemble OCI bundle
-      # ==========================================================
-      - name: Assemble bundle
-        run: |
-          set -eux
+# ==========================================================
+# HARD VALIDATION (fail fast if install breaks)
+# ==========================================================
+RUN set -eux; \
+    test -f /usr/local/lib/node_modules/homebridge/package.json; \
+    test -f /usr/local/lib/node_modules/homebridge-config-ui-x/package.json; \
+    command -v homebridge; \
+    command -v hb-service; \
+    node -e "console.log('Node.js Version:', process.version)"; \
+    node -e "console.log('Homebridge OK:', require('/usr/local/lib/node_modules/homebridge/package.json').version)"; \
+    node -e "console.log('UI OK:', require('/usr/local/lib/node_modules/homebridge-config-ui-x/package.json').version)"
 
-          mkdir -p bundle/rootfs
+# ==========================================================
+# Create explicit mount points for persistent storage
+# LINK FIX: Symlink /var/lib/homebridge/plugins -> node_modules
+# guarantees backward compatibility whether plugins are searched 
+# via -P or standard local node_modules resolution.
+# ==========================================================
+RUN mkdir -p \
+    /var/lib/homebridge \
+    /var/lib/homebridge/node_modules \
+    /var/lib/homebridge/persist \
+    /var/lib/homebridge/accessories \
+ && ln -sf /var/lib/homebridge/node_modules /var/lib/homebridge/plugins
 
-          tar -xpf rootfs.tar -C bundle/rootfs --owner=0 --group=0 --numeric-owner --same-permissions
-          rm -f rootfs.tar
+# ==========================================================
+# Runtime Environment & Container Launch
+# ==========================================================
+ENV HOME=/root \
+    TZ=UTC \
+    NODE_ENV=production \
+    NPM_CONFIG_CACHE=/tmp/.npm \
+    NPM_CONFIG_DEVDIR=/tmp/.node-gyp \
+    XDG_CONFIG_HOME=/tmp/.config
 
-          # Strip unnecessary OS caches & docs
-          rm -rf bundle/rootfs/usr/share/man \
-                 bundle/rootfs/usr/share/doc \
-                 bundle/rootfs/var/cache/apk/* \
-                 bundle/rootfs/tmp/*
+WORKDIR /var/lib/homebridge
 
-          cp ./config.json bundle/config.json
+# EXPOSE UI PORT
+EXPOSE 8581
 
-          python3 -m json.tool bundle/config.json > /dev/null
-          python3 - <<'PY'
-          import json
-          c = json.load(open("bundle/config.json"))
-          required = ["ociVersion", "process", "root", "mounts"]
-          for k in required:
-              assert k in c, f"Missing OCI field: {k}"
-          print("OCI config OK")
-          PY
+# PID 1 INIT ENGINE:
+# Reaps zombie child processes (FFmpeg, Python, BLE scanners) and forwards SIGTERM cleanly
+ENTRYPOINT ["/sbin/tini", "-g", "--"]
 
-          test -x bundle/rootfs/usr/local/bin/node
-          test -x bundle/rootfs/usr/local/bin/homebridge
-          test -x bundle/rootfs/usr/local/bin/hb-service
-          test -d bundle/rootfs/usr/local/lib/node_modules/homebridge
-          test -d bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x
-
-          tar \
-            --numeric-owner \
-            --owner=0 \
-            --group=0 \
-            --same-permissions \
-            -czf homebridge-arm64.tar.gz \
-            -C bundle .
-
-      # ==========================================================
-      # STEP 3: Sanity check
-      # ==========================================================
-      - name: Sanity check bundle
-        run: |
-          set -eux
-
-          tar -tzf homebridge-arm64.tar.gz | grep -q config.json
-          tar -tzf homebridge-arm64.tar.gz | grep -q "rootfs/usr/local/bin/node"
-          du -sh homebridge-arm64.tar.gz
-
-      # ==========================================================
-      # STEP 4: Metadata & Release
-      # ==========================================================
-      - name: Determine Release Name & Metadata
-        run: |
-          set -eux
-          CURRENT_DATE=$(date +'%Y-%m-%d')
-          
-          if [ -f "bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json" ]; then
-            HB_VER=$(python3 -c "import json; print(json.load(open('bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json'))['version'])")
-          else
-            HB_VER="${{ inputs.homebridge_version || 'latest' }}"
-          fi
-
-          if [ -f "bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x/package.json" ]; then
-            UI_VER=$(python3 -c "import json; print(json.load(open('bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x/package.json'))['version'])")
-          else
-            UI_VER="${{ inputs.config_ui_version || 'latest' }}"
-          fi
-
-          if [ -f "bundle/rootfs/etc/os-release" ]; then
-            ALPINE_VER="Alpine $(grep VERSION_ID bundle/rootfs/etc/os-release | cut -d'=' -f2 | tr -d '"')"
-          fi
-
-          if [ -f "bundle/rootfs/usr/local/include/node/node_version.h" ]; then
-            MAJOR=$(grep "#define NODE_MAJOR_VERSION" bundle/rootfs/usr/local/include/node/node_version.h | awk '{print $3}')
-            MINOR=$(grep "#define NODE_MINOR_VERSION" bundle/rootfs/usr/local/include/node/node_version.h | awk '{print $3}')
-            PATCH=$(grep "#define NODE_PATCH_VERSION" bundle/rootfs/usr/local/include/node/node_version.h | awk '{print $3}')
-            NODE_VER="v${MAJOR}.${MINOR}.${PATCH}"
-          else
-            NODE_VER="24.x LTS"
-          fi
-
-          echo "RELEASE_NAME=Homebridge V${HB_VER}-${CURRENT_DATE}" >> $GITHUB_ENV
-          echo "BUILD_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
-          echo "HB_VERSION=${HB_VER}" >> $GITHUB_ENV
-          echo "UI_VERSION=${UI_VER}" >> $GITHUB_ENV
-          echo "ALPINE_VERSION=${ALPINE_VER}" >> $GITHUB_ENV
-          echo "NODE_VERSION=${NODE_VER}" >> $GITHUB_ENV
-
-      - name: Publish release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: ${{ env.RELEASE_NAME }}
-          tag_name: latest
-          make_latest: true
-          fail_on_unmatched_files: true
-          files: homebridge-arm64.tar.gz
-          body: |
-            Homebridge UXC Bundle (Stabilized Baseline)
-
-            - OS Base: ${{ env.ALPINE_VERSION }} (arm64)
-            - Node.js Runtime: ${{ env.NODE_VERSION }}
-            - Homebridge Core: v${{ env.HB_VERSION }}
-            - Homebridge UI: v${{ env.UI_VERSION }}
-            - Build Commit: ${{ env.BUILD_SHA }}
+# RUNTIME LAUNCH COMMAND:
+# Runs hb-service inside a fail-safe auto-restart loop
+CMD ["/bin/sh", "-c", "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"]
