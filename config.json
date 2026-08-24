@@ -7,7 +7,7 @@
     "io.homebridge.storage-path": "/var/lib/homebridge",
     "io.homebridge.config-path": "/var/lib/homebridge/config.json",
     "io.homebridge.plugin-path": "/usr/local/lib/node_modules",
-    "io.openwrt.uxc.memory.limit-bytes": "512 MiB or 536870912 bytes",
+    "io.openwrt.uxc.memory.limit": "512 MiB or 536870912 bytes",
     "io.openwrt.uxc.node.max-old-space-size": "256 MiB"
   },
   "process": {
