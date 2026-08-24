@@ -1,7 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# Using node:24-alpine3.22 for stable, reproducible ARM64 builds
-FROM node:24-alpine3.22
+FROM node:24-alpine
 
 ARG HOMEBRIDGE_VERSION=latest
 ARG CONFIG_UI_VERSION=latest
@@ -14,12 +13,15 @@ LABEL org.opencontainers.image.title="openwrt-uxc-homebridge" \
 # System dependencies & Tini PID 1 Engine
 # ==========================================================
 RUN apk add --no-cache \
+    curl \
+    xz \
     tzdata \
     ca-certificates \
+    avahi \
     avahi-compat-libdns_sd \
+    dbus \
     libstdc++ \
-    libc6-compat \
-    curl \
+    ffmpeg \
     python3 \
     make \
     g++ \
@@ -31,26 +33,41 @@ RUN apk add --no-cache \
     tini
 
 # ==========================================================
-# FFmpeg installation (Optimized for Homebridge on Alpine ARM64/x86_64)
+# Install latest Node.js 24.x (musl build for Alpine)
 # ==========================================================
 RUN set -eux; \
-    ARCH=$(uname -m); \
-    if [ "$ARCH" = "aarch64" ]; then \
-        FFMPEG_ARCH="aarch64"; \
-    elif [ "$ARCH" = "x86_64" ]; then \
-        FFMPEG_ARCH="x86_64"; \
-    else \
-        echo "Unsupported architecture: $ARCH" && exit 1; \
-    fi; \
-    curl -Lf# "https://github.com/homebridge/ffmpeg-for-homebridge/releases/latest/download/ffmpeg-alpine-${FFMPEG_ARCH}.tar.gz" \
-    | tar xzf - -C / --no-same-owner; \
-    ffmpeg -version
+    ARCH="$(uname -m)"; \
+    case "$ARCH" in \
+        aarch64) NODE_ARCH="arm64" ;; \
+        x86_64) NODE_ARCH="x64" ;; \
+        *) echo "Unsupported architecture: $ARCH"; exit 1 ;; \
+    esac; \
+    \
+    NODE_VERSION="$( \
+        curl -fsSL https://unofficial-builds.nodejs.org/download/release/index.tab \
+        | awk -v arch="linux-${NODE_ARCH}-musl" '$1 ~ /^v24\./ && $0 ~ arch { print $1; exit }' \
+    )"; \
+    \
+    TARBALL="node-${NODE_VERSION}-linux-${NODE_ARCH}-musl.tar.xz"; \
+    BASE_URL="https://unofficial-builds.nodejs.org/download/release/${NODE_VERSION}"; \
+    \
+    curl -fsSL "${BASE_URL}/${TARBALL}" -o "/tmp/${TARBALL}"; \
+    curl -fsSL "${BASE_URL}/SHASUMS256.txt" -o "/tmp/SHASUMS256.txt"; \
+    \
+    cd /tmp; \
+    grep " ${TARBALL}\$" SHASUMS256.txt | sha256sum -c -; \
+    \
+    tar -xJ -f "/tmp/${TARBALL}" --strip-components=1 -C /usr/local; \
+    rm -f "/tmp/${TARBALL}" /tmp/SHASUMS256.txt
+
+# ==========================================================
+# Avahi & DBus run directory setup
+# ==========================================================
+RUN mkdir -p /var/run/dbus /var/run/avahi-daemon \
+ && chown -R root:root /var/run/dbus /var/run/avahi-daemon
 
 # ==========================================================
 # UXC FIX: Replace sudo binary with robust option-stripping wrapper
-# Bypasses setresuid() capability/seccomp restrictions.
-# Intentionally drops flags like -u, -g, -E to force execution as root.
-# Validates that a target command is provided before executing.
 # ==========================================================
 RUN rm -f /usr/bin/sudo \
  && cat > /usr/bin/sudo <<'EOF'
@@ -86,23 +103,13 @@ EOF
 RUN chmod 0755 /usr/bin/sudo
 
 # ==========================================================
-# READ-ONLY / OVERLAY ROOTFS FIX: Redirect npm cache/config/build to /tmp
-# Pre-creates directories and redirects /root/.npm and /root/.config
-# to the writable /tmp mount preventing ENOENT mkdir errors.
-# ==========================================================
-RUN mkdir -p /tmp/.npm /tmp/.config /tmp/.node-gyp \
- && rm -rf /root/.npm /root/.config \
- && ln -s /tmp/.npm /root/.npm \
- && ln -s /tmp/.config /root/.config
-
-# ==========================================================
-# CRITICAL FIX:
-# Ensure deterministic npm global install location and module path
+# NPM Config & Global Paths Target Integration
 # ==========================================================
 ENV NPM_CONFIG_PREFIX=/usr/local \
     NODE_PATH=/usr/local/lib/node_modules \
     npm_config_unsafe_perm=true \
-    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin
+    PYTHON=/usr/bin/python3 \
+    PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
 
 RUN npm config set prefix /usr/local \
  && npm config set update-notifier false \
@@ -111,7 +118,7 @@ RUN npm config set prefix /usr/local \
  && npm cache verify
 
 # ==========================================================
-# Install Homebridge stack
+# Install Homebridge stack globally
 # ==========================================================
 RUN npm install -g --unsafe-perm \
     homebridge@${HOMEBRIDGE_VERSION} \
@@ -119,29 +126,25 @@ RUN npm install -g --unsafe-perm \
  && npm cache clean --force
 
 # ==========================================================
-# HARD VALIDATION (fail fast if install breaks)
+# Persistent mount layout target setup (/var/lib/homebridge)
+# ==========================================================
+RUN mkdir -p \
+    /var/lib/homebridge \
+    /var/lib/homebridge/persist \
+    /var/lib/homebridge/accessories \
+    /var/lib/homebridge/tmp/.npm \
+    /var/lib/homebridge/tmp/.config \
+    /var/lib/homebridge/tmp/.node-gyp
+
+# ==========================================================
+# HARD VALIDATION
 # ==========================================================
 RUN set -eux; \
     test -f /usr/local/lib/node_modules/homebridge/package.json; \
     test -f /usr/local/lib/node_modules/homebridge-config-ui-x/package.json; \
     command -v homebridge; \
     command -v hb-service; \
-    node -e "console.log('Node.js Version:', process.version)"; \
-    node -e "console.log('Homebridge OK:', require('/usr/local/lib/node_modules/homebridge/package.json').version)"; \
-    node -e "console.log('UI OK:', require('/usr/local/lib/node_modules/homebridge-config-ui-x/package.json').version)"
-
-# ==========================================================
-# Create explicit mount points for persistent storage
-# LINK FIX: Symlink /var/lib/homebridge/plugins -> node_modules
-# guarantees backward compatibility whether plugins are searched 
-# via -P or standard local node_modules resolution.
-# ==========================================================
-RUN mkdir -p \
-    /var/lib/homebridge \
-    /var/lib/homebridge/node_modules \
-    /var/lib/homebridge/persist \
-    /var/lib/homebridge/accessories \
- && ln -sf /var/lib/homebridge/node_modules /var/lib/homebridge/plugins
+    node -e "console.log('Homebridge OK:', require('/usr/local/lib/node_modules/homebridge/package.json').version)"
 
 # ==========================================================
 # Runtime Environment & Container Launch
@@ -149,19 +152,14 @@ RUN mkdir -p \
 ENV HOME=/root \
     TZ=UTC \
     NODE_ENV=production \
-    NPM_CONFIG_CACHE=/tmp/.npm \
-    NPM_CONFIG_DEVDIR=/tmp/.node-gyp \
-    XDG_CONFIG_HOME=/tmp/.config
+    NPM_CONFIG_CACHE=/var/lib/homebridge/tmp/.npm \
+    NPM_CONFIG_DEVDIR=/var/lib/homebridge/tmp/.node-gyp \
+    XDG_CONFIG_HOME=/var/lib/homebridge/tmp/.config
 
-WORKDIR /var/lib/homebridge
+WORKDIR /root
 
-# EXPOSE UI PORT
 EXPOSE 8581
 
-# PID 1 INIT ENGINE:
-# Reaps zombie child processes (FFmpeg, Python, BLE scanners) and forwards SIGTERM cleanly
 ENTRYPOINT ["/sbin/tini", "-g", "--"]
 
-# RUNTIME LAUNCH COMMAND:
-# Runs hb-service inside a fail-safe auto-restart loop
-CMD ["/bin/sh", "-c", "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"]
+CMD ["/bin/sh", "-c", "mkdir -p /var/lib/homebridge/persist /var/lib/homebridge/accessories /var/lib/homebridge/tmp/.npm /var/lib/homebridge/tmp/.node-gyp /var/lib/homebridge/tmp/.config; while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge; RC=$?; echo \"$(date) Homebridge exited with code ${RC} - restarting in 3s\"; sleep 3; done"]
