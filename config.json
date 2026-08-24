@@ -1,79 +1,47 @@
 {
   "ociVersion": "1.0.2",
   "hostname": "homebridge",
-
   "annotations": {
     "org.opencontainers.image.source": "https://github.com/micpro7/openwrt-uxc-homebridge",
-
     "io.homebridge.node-path": "/usr/local/bin",
     "io.homebridge.storage-path": "/var/lib/homebridge",
     "io.homebridge.config-path": "/var/lib/homebridge/config.json",
-    "io.homebridge.plugin-path": "/var/lib/homebridge/node_modules"
+    "io.homebridge.plugin-path": "/usr/local/lib/node_modules",
+    "io.openwrt.uxc.memory.limit-bytes": "512 MiB or 536870912 bytes",
+    "io.openwrt.uxc.node.max-old-space-size": "256 MiB"
   },
-
   "process": {
     "terminal": false,
-
     "user": {
       "uid": 0,
       "gid": 0
     },
-
     "args": [
       "/sbin/tini",
       "-g",
       "--",
       "/bin/sh",
       "-c",
-      "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/node_modules; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"
+      "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"
     ],
-
     "env": [
-      "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin:/opt/homebridge/node_modules/.bin",
-
+      "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
       "HOME=/root",
       "TERM=xterm",
       "TZ=Europe/London",
-
-      "USER=root",
       "NODE_ENV=production",
-
-      "NODE_PATH=/opt/homebridge/node_modules:/var/lib/homebridge/node_modules:/usr/local/lib/node_modules",
-
       "NPM_CONFIG_PREFIX=/usr/local",
-      "npm_config_prefix=/usr/local",
-
-      "NPM_CONFIG_CACHE=/tmp/.npm",
-      "npm_config_cache=/tmp/.npm",
-
+      "NODE_PATH=/usr/local/lib/node_modules",
       "npm_config_update_notifier=false",
-      "NPM_CONFIG_UPDATE_NOTIFIER=false",
-
+      "NPM_CONFIG_CACHE=/tmp/.npm",
       "NPM_CONFIG_DEVDIR=/tmp/.node-gyp",
-      "npm_config_devdir=/tmp/.node-gyp",
-
       "XDG_CONFIG_HOME=/tmp/.config",
-
       "NODE_OPTIONS=--max-old-space-size=256",
       "UV_THREADPOOL_SIZE=4",
-
       "MDNS_INTERFACE=br-lan",
-      "HOMEBRIDGE_IP=0.0.0.0",
-
-      "HOMEBRIDGE_CONFIG_UI=1",
-      "HOMEBRIDGE_CONFIG_UI_TERMINAL=1",
-
-      "UIX_CUSTOM_PLUGIN_PATH=/var/lib/homebridge/node_modules",
-      "UIX_CONFIG_PATH=/var/lib/homebridge/config.json",
-      "UIX_STORAGE_PATH=/var/lib/homebridge",
-      "UIX_STRICT_PLUGIN_RESOLUTION=1",
-
-      "UIX_DEBUG_LOGGING=0",
-      "UIX_INSECURE_MODE=1"
+      "HOMEBRIDGE_IP=0.0.0.0"
     ],
-
     "cwd": "/var/lib/homebridge",
-
     "capabilities": {
       "bounding": [
         "CAP_CHOWN",
@@ -85,7 +53,6 @@
         "CAP_NET_RAW",
         "CAP_SYS_ADMIN"
       ],
-
       "effective": [
         "CAP_CHOWN",
         "CAP_DAC_OVERRIDE",
@@ -96,7 +63,6 @@
         "CAP_NET_RAW",
         "CAP_SYS_ADMIN"
       ],
-
       "inheritable": [
         "CAP_CHOWN",
         "CAP_DAC_OVERRIDE",
@@ -107,7 +73,6 @@
         "CAP_NET_RAW",
         "CAP_SYS_ADMIN"
       ],
-
       "permitted": [
         "CAP_CHOWN",
         "CAP_DAC_OVERRIDE",
@@ -118,10 +83,8 @@
         "CAP_NET_RAW",
         "CAP_SYS_ADMIN"
       ],
-
       "ambient": []
     },
-
     "rlimits": [
       {
         "type": "RLIMIT_NOFILE",
@@ -129,22 +92,18 @@
         "soft": 65536
       }
     ],
-
     "noNewPrivileges": false
   },
-
   "root": {
     "path": "rootfs",
     "readonly": false
   },
-
   "mounts": [
     {
       "destination": "/proc",
       "type": "proc",
       "source": "proc"
     },
-
     {
       "destination": "/dev",
       "type": "tmpfs",
@@ -156,7 +115,6 @@
         "size=65536k"
       ]
     },
-
     {
       "destination": "/dev/pts",
       "type": "devpts",
@@ -170,20 +128,18 @@
         "gid=5"
       ]
     },
-
     {
       "destination": "/dev/shm",
       "type": "tmpfs",
-      "source": "tmpfs",
+      "source": "shm",
       "options": [
         "nosuid",
         "noexec",
         "nodev",
         "mode=1777",
-        "size=128m"
+        "size=64m"
       ]
     },
-
     {
       "destination": "/tmp",
       "type": "tmpfs",
@@ -191,10 +147,10 @@
       "options": [
         "nosuid",
         "nodev",
-        "mode=1777"
+        "mode=1777",
+        "size=128m"
       ]
     },
-
     {
       "destination": "/run",
       "type": "tmpfs",
@@ -202,10 +158,10 @@
       "options": [
         "nosuid",
         "nodev",
-        "mode=755"
+        "mode=755",
+        "size=32m"
       ]
     },
-
     {
       "destination": "/var/lib/homebridge",
       "type": "none",
@@ -215,7 +171,6 @@
         "rw"
       ]
     },
-
     {
       "destination": "/etc/resolv.conf",
       "type": "none",
@@ -226,8 +181,13 @@
       ]
     }
   ],
-
   "linux": {
+    "resources": {
+      "memory": {
+        "limit": 536870912,
+        "swappiness": 0
+      }
+    },
     "namespaces": [
       {
         "type": "pid"
@@ -243,12 +203,8 @@
       },
       {
         "type": "cgroup"
-      },
-      {
-        "type": "mount"
       }
     ],
-
     "maskedPaths": [
       "/proc/kcore",
       "/proc/keys",
@@ -258,7 +214,6 @@
       "/proc/sched_debug",
       "/sys/firmware"
     ],
-
     "readonlyPaths": [
       "/proc/asound",
       "/proc/bus",
