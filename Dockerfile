@@ -20,7 +20,6 @@ RUN apk add --no-cache \
     libstdc++ \
     libc6-compat \
     curl \
-    ffmpeg \
     python3 \
     make \
     g++ \
