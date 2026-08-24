@@ -2,13 +2,8 @@
   "ociVersion": "1.0.2",
   "hostname": "homebridge",
   "annotations": {
-    "org.opencontainers.image.source": "https://github.com/micpro7/openwrt-uxc-homebridge",
-    "io.homebridge.node-path": "/usr/local/bin",
-    "io.homebridge.storage-path": "/var/lib/homebridge",
-    "io.homebridge.config-path": "/var/lib/homebridge/config.json",
-    "io.homebridge.plugin-path": "/usr/local/lib/node_modules",
-    "io.openwrt.uxc.memory.limit": "512 MiB or 536870912 bytes",
-    "io.openwrt.uxc.node.max-old-space-size": "256 MiB"
+    "org.opencontainers.image.source": "https://github.com/micpro7/HomeBridge-UXC",
+    "config.json.Version": "V6"
   },
   "process": {
     "terminal": false,
@@ -28,7 +23,7 @@
       "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
       "HOME=/root",
       "TERM=xterm",
-      "TZ=Europe/London",
+      "TZ=UTC",
       "NODE_ENV=production",
       "NPM_CONFIG_PREFIX=/usr/local",
       "NODE_PATH=/usr/local/lib/node_modules",
@@ -137,7 +132,7 @@
         "noexec",
         "nodev",
         "mode=1777",
-        "size=64m"
+        "size=128m"
       ]
     },
     {
@@ -147,8 +142,7 @@
       "options": [
         "nosuid",
         "nodev",
-        "mode=1777",
-        "size=128m"
+        "mode=1777"
       ]
     },
     {
@@ -158,14 +152,13 @@
       "options": [
         "nosuid",
         "nodev",
-        "mode=755",
-        "size=32m"
+        "mode=755"
       ]
     },
     {
       "destination": "/var/lib/homebridge",
       "type": "none",
-      "source": "/mnt/SSD/UXC/homebridge/data",
+      "source": "/mnt/usb/UXC/homebridge/data",
       "options": [
         "rbind",
         "rw"
@@ -174,7 +167,7 @@
     {
       "destination": "/etc/resolv.conf",
       "type": "none",
-      "source": "/mnt/SSD/UXC/homebridge/data/resolv.conf",
+      "source": "/mnt/usb/UXC/homebridge/data/resolv.conf",
       "options": [
         "rbind",
         "ro"
@@ -182,28 +175,12 @@
     }
   ],
   "linux": {
-    "resources": {
-      "memory": {
-        "limit": 536870912,
-        "swappiness": 0
-      }
-    },
     "namespaces": [
-      {
-        "type": "pid"
-      },
-      {
-        "type": "ipc"
-      },
-      {
-        "type": "uts"
-      },
-      {
-        "type": "mount"
-      },
-      {
-        "type": "cgroup"
-      }
+      { "type": "pid" },
+      { "type": "ipc" },
+      { "type": "uts" },
+      { "type": "mount" },
+      { "type": "cgroup" }
     ],
     "maskedPaths": [
       "/proc/kcore",
