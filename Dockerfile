@@ -21,7 +21,6 @@ RUN apk add --no-cache \
     avahi-compat-libdns_sd \
     dbus \
     libstdc++ \
-    ffmpeg \
     python3 \
     make \
     g++ \
