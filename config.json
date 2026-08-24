@@ -16,7 +16,7 @@
       "--",
       "/bin/sh",
       "-c",
-      "mkdir -p \\\n    /run/dbus \\\n    /run/avahi-daemon \\\n    /var/lib/homebridge/persist \\\n    /var/lib/homebridge/accessories \\\n    /var/lib/homebridge/tmp/.npm \\\n    /var/lib/homebridge/tmp/.node-gyp \\\n    /var/lib/homebridge/tmp/.config\n\nwhile true; do\n    /usr/local/bin/hb-service run \\\n        --allow-root \\\n        -U /var/lib/homebridge\n\n    RC=$?\n    echo \"$(date) Homebridge exited with code ${RC} - restarting in 3s\"\n    sleep 3\ndone"
+      "mkdir -p \\\n    /var/lib/homebridge/persist \\\n    /var/lib/homebridge/accessories \\\n    /var/lib/homebridge/tmp/.npm \\\n    /var/lib/homebridge/tmp/.node-gyp \\\n    /var/lib/homebridge/tmp/.config\n\nwhile true; do\n    /usr/local/bin/hb-service run \\\n        --allow-root \\\n        -U /var/lib/homebridge\n\n    RC=$?\n    echo \"$(date) Homebridge exited with code ${RC} - restarting in 3s\"\n    sleep 3\ndone"
     ],
     "env": [
       "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
@@ -148,16 +148,6 @@
       ]
     },
     {
-      "destination": "/run",
-      "type": "tmpfs",
-      "source": "tmpfs",
-      "options": [
-        "nosuid",
-        "nodev",
-        "mode=755"
-      ]
-    },
-    {
       "destination": "/var/lib/homebridge",
       "type": "none",
       "source": "/mnt/usb/UXC/homebridge/data",
@@ -183,11 +173,21 @@
       }
     },
     "namespaces": [
-      { "type": "pid" },
-      { "type": "ipc" },
-      { "type": "uts" },
-      { "type": "mount" },
-      { "type": "cgroup" }
+      {
+        "type": "pid"
+      },
+      {
+        "type": "ipc"
+      },
+      {
+        "type": "uts"
+      },
+      {
+        "type": "mount"
+      },
+      {
+        "type": "cgroup"
+      }
     ],
     "maskedPaths": [
       "/proc/kcore",
