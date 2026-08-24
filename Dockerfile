@@ -11,7 +11,7 @@ LABEL org.opencontainers.image.title="openwrt-uxc-homebridge" \
       org.opencontainers.image.source="https://github.com/micpro7/openwrt-uxc-homebridge"
 
 # ==========================================================
-# System dependencies & Tini PID 1 Engine (Trimmed unneeded bloat)
+# System dependencies & Tini PID 1 Engine
 # ==========================================================
 RUN apk add --no-cache \
     tzdata \
@@ -20,31 +20,22 @@ RUN apk add --no-cache \
     libstdc++ \
     libc6-compat \
     curl \
+    ffmpeg \
     python3 \
     make \
     g++ \
     git \
+    linux-headers \
     sudo \
+    bash \
+    openssh-client \
     tini
 
 # ==========================================================
-# FFmpeg installation (Optimized for Homebridge on Alpine ARM64/x86_64)
-# ==========================================================
-RUN set -eux; \
-    ARCH=$(uname -m); \
-    if [ "$ARCH" = "aarch64" ]; then \
-        FFMPEG_ARCH="aarch64"; \
-    elif [ "$ARCH" = "x86_64" ]; then \
-        FFMPEG_ARCH="x86_64"; \
-    else \
-        echo "Unsupported architecture: $ARCH" && exit 1; \
-    fi; \
-    curl -Lf# "https://github.com/homebridge/ffmpeg-for-homebridge/releases/latest/download/ffmpeg-alpine-${FFMPEG_ARCH}.tar.gz" \
-    | tar xzf - -C / --no-same-owner; \
-    ffmpeg -version
-
-# ==========================================================
 # UXC FIX: Replace sudo binary with robust option-stripping wrapper
+# Bypasses setresuid() capability/seccomp restrictions.
+# Intentionally drops flags like -u, -g, -E to force execution as root.
+# Validates that a target command is provided before executing.
 # ==========================================================
 RUN rm -f /usr/bin/sudo \
  && cat > /usr/bin/sudo <<'EOF'
@@ -81,6 +72,8 @@ RUN chmod 0755 /usr/bin/sudo
 
 # ==========================================================
 # READ-ONLY / OVERLAY ROOTFS FIX: Redirect npm cache/config/build to /tmp
+# Pre-creates directories and redirects /root/.npm and /root/.config
+# to the writable /tmp mount preventing ENOENT mkdir errors.
 # ==========================================================
 RUN mkdir -p /tmp/.npm /tmp/.config /tmp/.node-gyp \
  && rm -rf /root/.npm /root/.config \
@@ -88,7 +81,8 @@ RUN mkdir -p /tmp/.npm /tmp/.config /tmp/.node-gyp \
  && ln -s /tmp/.config /root/.config
 
 # ==========================================================
-# CRITICAL FIX: Deterministic npm global install location
+# CRITICAL FIX:
+# Ensure deterministic npm global install location and module path
 # ==========================================================
 ENV NPM_CONFIG_PREFIX=/usr/local \
     NODE_PATH=/usr/local/lib/node_modules \
@@ -102,7 +96,7 @@ RUN npm config set prefix /usr/local \
  && npm cache verify
 
 # ==========================================================
-# Install Homebridge stack globally (Immutable core)
+# Install Homebridge stack
 # ==========================================================
 RUN npm install -g --unsafe-perm \
     homebridge@${HOMEBRIDGE_VERSION} \
@@ -123,20 +117,22 @@ RUN set -eux; \
 
 # ==========================================================
 # Create explicit mount points for persistent storage
-# Architecture B: Persistent plugins live under /var/lib/homebridge/node_modules
+# LINK FIX: Symlink /var/lib/homebridge/plugins -> node_modules
+# guarantees backward compatibility whether plugins are searched 
+# via -P or standard local node_modules resolution.
 # ==========================================================
 RUN mkdir -p \
     /var/lib/homebridge \
     /var/lib/homebridge/node_modules \
     /var/lib/homebridge/persist \
-    /var/lib/homebridge/accessories
+    /var/lib/homebridge/accessories \
+ && ln -sf /var/lib/homebridge/node_modules /var/lib/homebridge/plugins
 
 # ==========================================================
 # Runtime Environment & Container Launch
-# Fixed HOME path for plugin persistence and correct UK timezone
 # ==========================================================
-ENV HOME=/var/lib/homebridge \
-    TZ=Europe/London \
+ENV HOME=/root \
+    TZ=UTC \
     NODE_ENV=production \
     NPM_CONFIG_CACHE=/tmp/.npm \
     NPM_CONFIG_DEVDIR=/tmp/.node-gyp \
@@ -148,8 +144,9 @@ WORKDIR /var/lib/homebridge
 EXPOSE 8581
 
 # PID 1 INIT ENGINE:
+# Reaps zombie child processes (FFmpeg, Python, BLE scanners) and forwards SIGTERM cleanly
 ENTRYPOINT ["/sbin/tini", "-g", "--"]
 
 # RUNTIME LAUNCH COMMAND:
-# Explicitly passes -P to point Homebridge to the persistent SSD plugin directory
-CMD ["/bin/sh", "-c", "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge -P /var/lib/homebridge/node_modules; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"]
+# Runs hb-service inside a fail-safe auto-restart loop
+CMD ["/bin/sh", "-c", "while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge; echo \"$(date) Homebridge crashed - restarting in 3s\"; sleep 3; done"]
