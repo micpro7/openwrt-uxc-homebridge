@@ -20,7 +20,6 @@ RUN apk add --no-cache \
     libstdc++ \
     libc6-compat \
     curl \
-    ffmpeg \
     python3 \
     make \
     g++ \
@@ -30,6 +29,22 @@ RUN apk add --no-cache \
     bash \
     openssh-client \
     tini
+
+# ==========================================================
+# FFmpeg installation (Optimized for Homebridge on Alpine ARM64/x86_64)
+# ==========================================================
+RUN set -eux; \
+    ARCH=$(uname -m); \
+    if [ "$ARCH" = "aarch64" ]; then \
+        FFMPEG_ARCH="aarch64"; \
+    elif [ "$ARCH" = "x86_64" ]; then \
+        FFMPEG_ARCH="x86_64"; \
+    else \
+        echo "Unsupported architecture: $ARCH" && exit 1; \
+    fi; \
+    curl -Lf# "https://github.com/homebridge/ffmpeg-for-homebridge/releases/latest/download/ffmpeg-alpine-${FFMPEG_ARCH}.tar.gz" \
+    | tar xzf - -C / --no-same-owner; \
+    ffmpeg -version
 
 # ==========================================================
 # UXC FIX: Replace sudo binary with robust option-stripping wrapper
