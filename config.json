@@ -159,7 +159,7 @@
     {
       "destination": "/var/lib/homebridge",
       "type": "none",
-      "source": "/mnt/X6/UXC/homebridge/data",
+      "source": "/mnt/usb/UXC/homebridge/data",
       "options": [
         "rbind",
         "rw"
@@ -168,7 +168,7 @@
     {
       "destination": "/etc/resolv.conf",
       "type": "none",
-      "source": "/mnt/X6/UXC/homebridge/data/resolv.conf",
+      "source": "/mnt/usb/UXC/homebridge/data/resolv.conf",
       "options": [
         "rbind",
         "ro"
