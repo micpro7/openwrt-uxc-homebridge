@@ -17,9 +17,6 @@ RUN apk add --no-cache \
     xz \
     tzdata \
     ca-certificates \
-    avahi \
-    avahi-compat-libdns_sd \
-    dbus \
     libstdc++ \
     python3 \
     make \
@@ -28,7 +25,6 @@ RUN apk add --no-cache \
     linux-headers \
     sudo \
     bash \
-    openssh-client \
     tini
 
 # ==========================================================
