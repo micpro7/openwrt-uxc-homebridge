@@ -36,7 +36,8 @@
       "NODE_OPTIONS=--max-old-space-size=256",
       "UV_THREADPOOL_SIZE=4",
       "MDNS_INTERFACE=br-lan",
-      "HOMEBRIDGE_IP=0.0.0.0"
+      "HOMEBRIDGE_IP=0.0.0.0",
+      "DBUS_SYSTEM_BUS_ADDRESS=unix:path=/var/run/dbus/system_bus_socket"
     ],
     "cwd": "/var/lib/homebridge",
     "capabilities": {
@@ -163,6 +164,24 @@
       "options": [
         "rbind",
         "ro"
+      ]
+    },
+    {
+      "destination": "/var/run/dbus",
+      "type": "none",
+      "source": "/var/run/dbus",
+      "options": [
+        "rbind",
+        "rw"
+      ]
+    },
+    {
+      "destination": "/var/run/avahi-daemon",
+      "type": "none",
+      "source": "/var/run/avahi-daemon",
+      "options": [
+        "rbind",
+        "rw"
       ]
     }
   ],
