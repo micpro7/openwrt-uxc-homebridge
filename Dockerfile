@@ -56,12 +56,6 @@ RUN set -eux; \
     rm -f "/tmp/${TARBALL}" /tmp/SHASUMS256.txt
 
 # ==========================================================
-# Avahi & DBus run directory setup
-# ==========================================================
-RUN mkdir -p /var/run/dbus /var/run/avahi-daemon \
- && chown -R root:root /var/run/dbus /var/run/avahi-daemon
-
-# ==========================================================
 # UXC FIX: Replace sudo binary with robust option-stripping wrapper
 # ==========================================================
 RUN rm -f /usr/bin/sudo \
