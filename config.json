@@ -148,15 +148,6 @@
       ]
     },
     {
-      "destination": "/run/dbus",
-      "type": "none",
-      "source": "/run/dbus",
-      "options": [
-        "rbind",
-        "ro"
-      ]
-    },
-    {
       "destination": "/var/lib/homebridge",
       "type": "none",
       "source": "/mnt/usb/UXC/homebridge/data",
