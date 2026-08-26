@@ -188,7 +188,7 @@
   "linux": {
     "resources": {
       "memory": {
-        "limit": 536870912
+        "limit": 314572800
       }
     },
     "namespaces": [
