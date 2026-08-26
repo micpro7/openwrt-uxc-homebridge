@@ -18,29 +18,39 @@
       "/usr/bin/tini",
       "-g",
       "--",
-      "/usr/local/bin/entrypoint.sh"
+      "/usr/local/bin/homebridge-entrypoint.sh"
     ],
 
     "env": [
       "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
       "HOME=/root",
       "TERM=xterm",
-      "TZ=Europe/London",
+      "TZ=UTC",
       "NODE_ENV=production",
+
       "NPM_CONFIG_PREFIX=/usr/local",
       "NODE_PATH=/usr/local/lib/node_modules",
-      "npm_config_update_notifier=false",
+
       "npm_config_unsafe_perm=true",
+      "npm_config_update_notifier=false",
+      "npm_config_audit=false",
+      "npm_config_fund=false",
+
       "NPM_CONFIG_CACHE=/var/lib/homebridge/tmp/.npm",
       "NPM_CONFIG_DEVDIR=/var/lib/homebridge/tmp/.node-gyp",
+
       "XDG_CONFIG_HOME=/var/lib/homebridge/tmp/.config",
+
       "TMPDIR=/var/lib/homebridge/tmp",
       "TEMP=/var/lib/homebridge/tmp",
       "TMP=/var/lib/homebridge/tmp",
+
       "NODE_OPTIONS=--max-old-space-size=256",
       "UV_THREADPOOL_SIZE=4",
+
       "MDNS_INTERFACE=br-lan",
       "HOMEBRIDGE_IP=0.0.0.0",
+
       "DBUS_SYSTEM_BUS_ADDRESS=unix:path=/var/run/dbus/system_bus_socket"
     ],
 
@@ -174,6 +184,16 @@
       "options": [
         "rbind",
         "rw"
+      ]
+    },
+
+    {
+      "destination": "/etc/resolv.conf",
+      "type": "none",
+      "source": "/mnt/usb/UXC/homebridge/data/resolv.conf",
+      "options": [
+        "rbind",
+        "ro"
       ]
     },
 
