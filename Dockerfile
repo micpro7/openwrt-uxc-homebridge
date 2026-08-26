@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM node:24-alpine
+FROM debian:trixie-slim
 
 ARG HOMEBRIDGE_VERSION=latest
 ARG CONFIG_UI_VERSION=latest
@@ -12,48 +12,57 @@ LABEL org.opencontainers.image.title="openwrt-uxc-homebridge" \
 # ==========================================================
 # System dependencies & Tini PID 1 Engine
 # ==========================================================
-RUN apk add --no-cache \
-    curl \
-    xz \
-    tzdata \
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
     ca-certificates \
-    libstdc++ \
+    curl \
+    xz-utils \
+    tzdata \
     python3 \
     make \
     g++ \
     git \
-    linux-headers \
     sudo \
     bash \
-    tini
+    tini \
+ && rm -rf /var/lib/apt/lists/*
 
 # ==========================================================
-# Install latest Node.js 24.x (musl build for Alpine)
+# Install latest Node.js 24.x
+# Official Node.js ARM64 glibc build
 # ==========================================================
 RUN set -eux; \
     ARCH="$(uname -m)"; \
     case "$ARCH" in \
         aarch64) NODE_ARCH="arm64" ;; \
-        x86_64) NODE_ARCH="x64" ;; \
+        x86_64)  NODE_ARCH="x64" ;; \
         *) echo "Unsupported architecture: $ARCH"; exit 1 ;; \
     esac; \
     \
     NODE_VERSION="$( \
-        curl -fsSL https://unofficial-builds.nodejs.org/download/release/index.tab \
-        | awk -v arch="linux-${NODE_ARCH}-musl" '$1 ~ /^v24\./ && $0 ~ arch { print $1; exit }' \
+        curl -fsSL https://nodejs.org/dist/index.tab \
+        | awk -v arch="linux-${NODE_ARCH}" '$1 ~ /^v24\./ && $0 ~ arch { print $1; exit }' \
     )"; \
     \
-    TARBALL="node-${NODE_VERSION}-linux-${NODE_ARCH}-musl.tar.xz"; \
-    BASE_URL="https://unofficial-builds.nodejs.org/download/release/${NODE_VERSION}"; \
+    TARBALL="node-${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz"; \
+    BASE_URL="https://nodejs.org/dist/${NODE_VERSION}"; \
     \
-    curl -fsSL "${BASE_URL}/${TARBALL}" -o "/tmp/${TARBALL}"; \
-    curl -fsSL "${BASE_URL}/SHASUMS256.txt" -o "/tmp/SHASUMS256.txt"; \
+    curl -fsSL "${BASE_URL}/${TARBALL}" \
+        -o "/tmp/${TARBALL}"; \
+    \
+    curl -fsSL "${BASE_URL}/SHASUMS256.txt" \
+        -o /tmp/SHASUMS256.txt; \
     \
     cd /tmp; \
     grep " ${TARBALL}\$" SHASUMS256.txt | sha256sum -c -; \
     \
-    tar -xJ -f "/tmp/${TARBALL}" --strip-components=1 -C /usr/local; \
-    rm -f "/tmp/${TARBALL}" /tmp/SHASUMS256.txt
+    tar -xJf "/tmp/${TARBALL}" \
+        --strip-components=1 \
+        -C /usr/local; \
+    \
+    rm -f \
+        "/tmp/${TARBALL}" \
+        /tmp/SHASUMS256.txt
 
 # ==========================================================
 # UXC FIX: Replace sudo binary with robust option-stripping wrapper
@@ -61,6 +70,7 @@ RUN set -eux; \
 RUN rm -f /usr/bin/sudo \
  && cat > /usr/bin/sudo <<'EOF'
 #!/bin/sh
+
 while [ $# -gt 0 ]; do
     case "$1" in
         -n|-E|-H|-S|-k|-K|-b|-v)
@@ -89,6 +99,7 @@ fi
 
 exec "$@"
 EOF
+
 RUN chmod 0755 /usr/bin/sudo
 
 # ==========================================================
@@ -115,7 +126,7 @@ RUN npm install -g --unsafe-perm \
  && npm cache clean --force
 
 # ==========================================================
-# Persistent mount layout target setup (/var/lib/homebridge)
+# Persistent mount layout target setup
 # ==========================================================
 RUN mkdir -p \
     /var/lib/homebridge \
@@ -131,8 +142,12 @@ RUN mkdir -p \
 RUN set -eux; \
     test -f /usr/local/lib/node_modules/homebridge/package.json; \
     test -f /usr/local/lib/node_modules/homebridge-config-ui-x/package.json; \
+    command -v node; \
+    command -v npm; \
     command -v homebridge; \
     command -v hb-service; \
+    node --version; \
+    npm --version; \
     node -e "console.log('Homebridge OK:', require('/usr/local/lib/node_modules/homebridge/package.json').version)"
 
 # ==========================================================
@@ -149,6 +164,6 @@ WORKDIR /root
 
 EXPOSE 8581
 
-ENTRYPOINT ["/sbin/tini", "-g", "--"]
+ENTRYPOINT ["/usr/bin/tini", "-g", "--"]
 
 CMD ["/bin/sh", "-c", "mkdir -p /var/lib/homebridge/persist /var/lib/homebridge/accessories /var/lib/homebridge/tmp/.npm /var/lib/homebridge/tmp/.node-gyp /var/lib/homebridge/tmp/.config; while true; do /usr/local/bin/hb-service run --allow-root -U /var/lib/homebridge; RC=$?; echo \"$(date) Homebridge exited with code ${RC} - restarting in 3s\"; sleep 3; done"]
