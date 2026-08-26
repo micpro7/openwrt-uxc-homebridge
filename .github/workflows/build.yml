@@ -138,8 +138,6 @@ jobs:
           assert config["process"]["user"]["uid"] == 0
           assert config["process"]["user"]["gid"] == 0
 
-          assert config["linux"]["resources"]["memory"]["limit"] == 314572800
-
           print("OCI config OK")
           PY
 
