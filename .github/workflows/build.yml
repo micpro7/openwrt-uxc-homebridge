@@ -7,6 +7,7 @@ on:
         description: "Homebridge version"
         default: "latest"
         required: false
+
       config_ui_version:
         description: "Config UI X version"
         default: "latest"
@@ -16,7 +17,8 @@ on:
     - cron: "0 6 * * 1"
 
   push:
-    branches: [main]
+    branches:
+      - main
     paths:
       - "Dockerfile"
       - "config.json"
@@ -34,20 +36,21 @@ jobs:
     runs-on: ubuntu-24.04-arm
 
     steps:
+
       # ==========================================================
-      # Checkout repository
+      # Checkout
       # ==========================================================
       - name: Checkout repo
         uses: actions/checkout@v5
 
       # ==========================================================
-      # Setup Docker Buildx
+      # Setup Buildx
       # ==========================================================
       - name: Setup Buildx
         uses: docker/setup-buildx-action@v4
 
       # ==========================================================
-      # STEP 1: Build ARM64 image
+      # STEP 1: Build ARM64 Docker image
       # ==========================================================
       - name: Build rootfs (Docker)
         run: |
@@ -100,12 +103,12 @@ jobs:
             bundle/rootfs/tmp/*
 
           # ========================================================
-          # Copy UXC OCI configuration
+          # Copy OCI configuration
           # ========================================================
           cp ./config.json bundle/config.json
 
           # ========================================================
-          # Validate OCI configuration
+          # Validate JSON
           # ========================================================
           python3 -m json.tool bundle/config.json > /dev/null
 
@@ -124,6 +127,16 @@ jobs:
 
           for key in required:
               assert key in config, f"Missing OCI field: {key}"
+
+          args = config["process"]["args"]
+
+          assert args[0] == "/usr/bin/tini", \
+              f"Unexpected init: {args[0]}"
+
+          assert "/usr/local/bin/entrypoint.sh" in args, \
+              "Missing Homebridge entrypoint"
+
+          assert config["root"]["path"] == "rootfs"
 
           print("OCI config OK")
           PY
@@ -158,7 +171,7 @@ jobs:
             bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x/package.json
 
           # ========================================================
-          # Validate required runtime components
+          # Validate runtime components
           # ========================================================
           test -x bundle/rootfs/usr/bin/tini
           test -x bundle/rootfs/usr/bin/sudo
@@ -166,11 +179,17 @@ jobs:
           test -x bundle/rootfs/usr/bin/bash
 
           # ========================================================
-          # Validate persistent Homebridge directories
+          # Validate entrypoint
+          # ========================================================
+          test -x bundle/rootfs/usr/local/bin/entrypoint.sh
+
+          # ========================================================
+          # Validate persistent directories
           # ========================================================
           test -d bundle/rootfs/var/lib/homebridge
           test -d bundle/rootfs/var/lib/homebridge/persist
           test -d bundle/rootfs/var/lib/homebridge/accessories
+          test -d bundle/rootfs/var/lib/homebridge/tmp
           test -d bundle/rootfs/var/lib/homebridge/tmp/.npm
           test -d bundle/rootfs/var/lib/homebridge/tmp/.config
           test -d bundle/rootfs/var/lib/homebridge/tmp/.node-gyp
@@ -217,6 +236,9 @@ jobs:
             | grep -q "rootfs/usr/local/bin/hb-service"
 
           tar -tzf homebridge-arm64.tar.gz \
+            | grep -q "rootfs/usr/local/bin/entrypoint.sh"
+
+          tar -tzf homebridge-arm64.tar.gz \
             | grep -q "rootfs/usr/bin/tini"
 
           tar -tzf homebridge-arm64.tar.gz \
@@ -231,7 +253,7 @@ jobs:
           echo "=========================================="
 
       # ==========================================================
-      # STEP 4: Determine versions & metadata
+      # STEP 4: Determine versions
       # ==========================================================
       - name: Determine Release Name & Metadata
         run: |
@@ -308,9 +330,6 @@ jobs:
             NODE_VER="24.x"
           fi
 
-          # ========================================================
-          # Export metadata
-          # ========================================================
           echo "RELEASE_NAME=Homebridge V${HB_VER}-${CURRENT_DATE}" >> "$GITHUB_ENV"
           echo "BUILD_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
           echo "HB_VERSION=${HB_VER}" >> "$GITHUB_ENV"
@@ -329,6 +348,7 @@ jobs:
           make_latest: true
           fail_on_unmatched_files: true
           files: homebridge-arm64.tar.gz
+
           body: |
             Homebridge UXC Bundle
 
