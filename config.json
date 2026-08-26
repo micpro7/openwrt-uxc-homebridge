@@ -1,23 +1,26 @@
 {
   "ociVersion": "1.0.2",
   "hostname": "homebridge",
+
   "annotations": {
     "org.opencontainers.image.source": "https://github.com/micpro7/openwrt-uxc-homebridge"
   },
+
   "process": {
     "terminal": false,
+
     "user": {
       "uid": 0,
       "gid": 0
     },
+
     "args": [
-      "/sbin/tini",
+      "/usr/bin/tini",
       "-g",
       "--",
-      "/bin/sh",
-      "-c",
-      "mkdir -p \\\n    /var/lib/homebridge/persist \\\n    /var/lib/homebridge/accessories \\\n    /var/lib/homebridge/tmp/.npm \\\n    /var/lib/homebridge/tmp/.node-gyp \\\n    /var/lib/homebridge/tmp/.config\n\nwhile true; do\n    /usr/local/bin/hb-service run \\\n        --allow-root \\\n        -U /var/lib/homebridge\n\n    RC=$?\n    echo \"$(date) Homebridge exited with code ${RC} - restarting in 3s\"\n    sleep 3\ndone"
+      "/usr/local/bin/entrypoint.sh"
     ],
+
     "env": [
       "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
       "HOME=/root",
@@ -27,6 +30,7 @@
       "NPM_CONFIG_PREFIX=/usr/local",
       "NODE_PATH=/usr/local/lib/node_modules",
       "npm_config_update_notifier=false",
+      "npm_config_unsafe_perm=true",
       "NPM_CONFIG_CACHE=/var/lib/homebridge/tmp/.npm",
       "NPM_CONFIG_DEVDIR=/var/lib/homebridge/tmp/.node-gyp",
       "XDG_CONFIG_HOME=/var/lib/homebridge/tmp/.config",
@@ -39,7 +43,9 @@
       "HOMEBRIDGE_IP=0.0.0.0",
       "DBUS_SYSTEM_BUS_ADDRESS=unix:path=/var/run/dbus/system_bus_socket"
     ],
+
     "cwd": "/var/lib/homebridge",
+
     "capabilities": {
       "bounding": [
         "CAP_CHOWN",
@@ -51,6 +57,7 @@
         "CAP_NET_RAW",
         "CAP_SYS_ADMIN"
       ],
+
       "effective": [
         "CAP_CHOWN",
         "CAP_DAC_OVERRIDE",
@@ -61,6 +68,7 @@
         "CAP_NET_RAW",
         "CAP_SYS_ADMIN"
       ],
+
       "inheritable": [
         "CAP_CHOWN",
         "CAP_DAC_OVERRIDE",
@@ -71,6 +79,7 @@
         "CAP_NET_RAW",
         "CAP_SYS_ADMIN"
       ],
+
       "permitted": [
         "CAP_CHOWN",
         "CAP_DAC_OVERRIDE",
@@ -81,8 +90,10 @@
         "CAP_NET_RAW",
         "CAP_SYS_ADMIN"
       ],
+
       "ambient": []
     },
+
     "rlimits": [
       {
         "type": "RLIMIT_NOFILE",
@@ -90,18 +101,22 @@
         "soft": 65536
       }
     ],
+
     "noNewPrivileges": false
   },
+
   "root": {
     "path": "rootfs",
     "readonly": false
   },
+
   "mounts": [
     {
       "destination": "/proc",
       "type": "proc",
       "source": "proc"
     },
+
     {
       "destination": "/dev",
       "type": "tmpfs",
@@ -113,6 +128,7 @@
         "size=65536k"
       ]
     },
+
     {
       "destination": "/dev/pts",
       "type": "devpts",
@@ -126,6 +142,7 @@
         "gid=5"
       ]
     },
+
     {
       "destination": "/dev/shm",
       "type": "tmpfs",
@@ -138,6 +155,7 @@
         "size=32m"
       ]
     },
+
     {
       "destination": "/tmp",
       "type": "tmpfs",
@@ -148,6 +166,7 @@
         "mode=1777"
       ]
     },
+
     {
       "destination": "/var/lib/homebridge",
       "type": "none",
@@ -157,15 +176,7 @@
         "rw"
       ]
     },
-    {
-      "destination": "/etc/resolv.conf",
-      "type": "none",
-      "source": "/mnt/usb/UXC/homebridge/data/resolv.conf",
-      "options": [
-        "rbind",
-        "ro"
-      ]
-    },
+
     {
       "destination": "/var/run/dbus",
       "type": "none",
@@ -175,6 +186,7 @@
         "rw"
       ]
     },
+
     {
       "destination": "/var/run/avahi-daemon",
       "type": "none",
@@ -185,12 +197,14 @@
       ]
     }
   ],
+
   "linux": {
     "resources": {
       "memory": {
         "limit": 314572800
       }
     },
+
     "namespaces": [
       {
         "type": "pid"
@@ -208,6 +222,7 @@
         "type": "cgroup"
       }
     ],
+
     "maskedPaths": [
       "/proc/kcore",
       "/proc/keys",
@@ -217,6 +232,7 @@
       "/proc/sched_debug",
       "/sys/firmware"
     ],
+
     "readonlyPaths": [
       "/proc/asound",
       "/proc/bus",
