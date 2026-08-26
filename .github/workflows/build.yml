@@ -4,9 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       homebridge_version:
+        description: "Homebridge version"
         default: "latest"
         required: false
       config_ui_version:
+        description: "Config UI X version"
         default: "latest"
         required: false
 
@@ -32,14 +34,20 @@ jobs:
     runs-on: ubuntu-24.04-arm
 
     steps:
+      # ==========================================================
+      # Checkout repository
+      # ==========================================================
       - name: Checkout repo
         uses: actions/checkout@v5
 
+      # ==========================================================
+      # Setup Docker Buildx
+      # ==========================================================
       - name: Setup Buildx
         uses: docker/setup-buildx-action@v4
 
       # ==========================================================
-      # STEP 1: Build image and export raw rootfs tarball
+      # STEP 1: Build ARM64 image
       # ==========================================================
       - name: Build rootfs (Docker)
         run: |
@@ -55,12 +63,16 @@ jobs:
             --load \
             .
 
-          CONTAINER_ID=$(docker create homebridge-uxc:build)
+          CONTAINER_ID="$(docker create homebridge-uxc:build)"
+
           docker export "$CONTAINER_ID" > rootfs.tar
+
           docker rm "$CONTAINER_ID"
 
+          test -s rootfs.tar
+
       # ==========================================================
-      # STEP 2: Assemble OCI bundle
+      # STEP 2: Assemble UXC bundle
       # ==========================================================
       - name: Assemble bundle
         run: |
@@ -68,33 +80,110 @@ jobs:
 
           mkdir -p bundle/rootfs
 
-          tar -xpf rootfs.tar -C bundle/rootfs --owner=0 --group=0 --numeric-owner --same-permissions
+          tar -xpf rootfs.tar \
+            -C bundle/rootfs \
+            --owner=0 \
+            --group=0 \
+            --numeric-owner \
+            --same-permissions
+
           rm -f rootfs.tar
 
-          # Strip unnecessary OS caches & docs
-          rm -rf bundle/rootfs/usr/share/man \
-                 bundle/rootfs/usr/share/doc \
-                 bundle/rootfs/var/cache/apk/* \
-                 bundle/rootfs/tmp/*
+          # ========================================================
+          # Strip unnecessary Debian files
+          # ========================================================
+          rm -rf \
+            bundle/rootfs/usr/share/man \
+            bundle/rootfs/usr/share/doc \
+            bundle/rootfs/usr/share/info \
+            bundle/rootfs/var/cache/apt/* \
+            bundle/rootfs/tmp/*
 
+          # ========================================================
+          # Copy UXC OCI configuration
+          # ========================================================
           cp ./config.json bundle/config.json
 
+          # ========================================================
+          # Validate OCI configuration
+          # ========================================================
           python3 -m json.tool bundle/config.json > /dev/null
+
           python3 - <<'PY'
           import json
-          c = json.load(open("bundle/config.json"))
-          required = ["ociVersion", "process", "root", "mounts"]
-          for k in required:
-              assert k in c, f"Missing OCI field: {k}"
+
+          with open("bundle/config.json") as f:
+              config = json.load(f)
+
+          required = [
+              "ociVersion",
+              "process",
+              "root",
+              "mounts"
+          ]
+
+          for key in required:
+              assert key in config, f"Missing OCI field: {key}"
+
           print("OCI config OK")
           PY
 
+          # ========================================================
+          # Validate Debian Trixie
+          # ========================================================
+          test -f bundle/rootfs/etc/os-release
+
+          grep -q "Debian" \
+            bundle/rootfs/etc/os-release
+
+          grep -q "trixie" \
+            bundle/rootfs/etc/os-release
+
+          # ========================================================
+          # Validate Node.js
+          # ========================================================
           test -x bundle/rootfs/usr/local/bin/node
+          test -x bundle/rootfs/usr/local/bin/npm
+
+          # ========================================================
+          # Validate Homebridge
+          # ========================================================
           test -x bundle/rootfs/usr/local/bin/homebridge
           test -x bundle/rootfs/usr/local/bin/hb-service
-          test -d bundle/rootfs/usr/local/lib/node_modules/homebridge
-          test -d bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x
 
+          test -f \
+            bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json
+
+          test -f \
+            bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x/package.json
+
+          # ========================================================
+          # Validate required runtime components
+          # ========================================================
+          test -x bundle/rootfs/usr/bin/tini
+          test -x bundle/rootfs/usr/bin/sudo
+          test -x bundle/rootfs/usr/bin/python3
+          test -x bundle/rootfs/usr/bin/bash
+
+          # ========================================================
+          # Validate persistent Homebridge directories
+          # ========================================================
+          test -d bundle/rootfs/var/lib/homebridge
+          test -d bundle/rootfs/var/lib/homebridge/persist
+          test -d bundle/rootfs/var/lib/homebridge/accessories
+          test -d bundle/rootfs/var/lib/homebridge/tmp/.npm
+          test -d bundle/rootfs/var/lib/homebridge/tmp/.config
+          test -d bundle/rootfs/var/lib/homebridge/tmp/.node-gyp
+
+          # ========================================================
+          # Validate ARM64 glibc
+          # ========================================================
+          test -e \
+            bundle/rootfs/lib/aarch64-linux-gnu/libc.so.6
+
+          # ========================================================
+          # Create final UXC bundle
+          # ========================================================
           tar \
             --numeric-owner \
             --owner=0 \
@@ -110,50 +199,128 @@ jobs:
         run: |
           set -eux
 
-          tar -tzf homebridge-arm64.tar.gz | grep -q config.json
-          tar -tzf homebridge-arm64.tar.gz | grep -q "rootfs/usr/local/bin/node"
-          du -sh homebridge-arm64.tar.gz
+          test -s homebridge-arm64.tar.gz
+
+          tar -tzf homebridge-arm64.tar.gz \
+            | grep -q "^./config.json$"
+
+          tar -tzf homebridge-arm64.tar.gz \
+            | grep -q "rootfs/usr/local/bin/node"
+
+          tar -tzf homebridge-arm64.tar.gz \
+            | grep -q "rootfs/usr/local/bin/npm"
+
+          tar -tzf homebridge-arm64.tar.gz \
+            | grep -q "rootfs/usr/local/bin/homebridge"
+
+          tar -tzf homebridge-arm64.tar.gz \
+            | grep -q "rootfs/usr/local/bin/hb-service"
+
+          tar -tzf homebridge-arm64.tar.gz \
+            | grep -q "rootfs/usr/bin/tini"
+
+          tar -tzf homebridge-arm64.tar.gz \
+            | grep -q "rootfs/usr/bin/sudo"
+
+          tar -tzf homebridge-arm64.tar.gz \
+            | grep -q "rootfs/etc/os-release"
+
+          echo "=========================================="
+          echo "Bundle size:"
+          du -h homebridge-arm64.tar.gz
+          echo "=========================================="
 
       # ==========================================================
-      # STEP 4: Metadata & Release
+      # STEP 4: Determine versions & metadata
       # ==========================================================
       - name: Determine Release Name & Metadata
         run: |
           set -eux
+
           CURRENT_DATE=$(date +'%Y-%m-%d')
-          
+
+          # ========================================================
+          # Homebridge version
+          # ========================================================
           if [ -f "bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json" ]; then
-            HB_VER=$(python3 -c "import json; print(json.load(open('bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json'))['version'])")
+            HB_VER=$(
+              python3 -c \
+              "import json; print(json.load(open('bundle/rootfs/usr/local/lib/node_modules/homebridge/package.json'))['version'])"
+            )
           else
             HB_VER="${{ inputs.homebridge_version || 'latest' }}"
           fi
 
+          # ========================================================
+          # Config UI X version
+          # ========================================================
           if [ -f "bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x/package.json" ]; then
-            UI_VER=$(python3 -c "import json; print(json.load(open('bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x/package.json'))['version'])")
+            UI_VER=$(
+              python3 -c \
+              "import json; print(json.load(open('bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x/package.json'))['version'])"
+            )
           else
             UI_VER="${{ inputs.config_ui_version || 'latest' }}"
           fi
 
+          # ========================================================
+          # Debian version
+          # ========================================================
           if [ -f "bundle/rootfs/etc/os-release" ]; then
-            ALPINE_VER="Alpine $(grep VERSION_ID bundle/rootfs/etc/os-release | cut -d'=' -f2 | tr -d '"')"
-          fi
+            DEBIAN_VERSION=$(
+              grep '^VERSION_ID=' \
+              bundle/rootfs/etc/os-release \
+              | cut -d'=' -f2 \
+              | tr -d '"'
+            )
 
-          if [ -f "bundle/rootfs/usr/local/include/node/node_version.h" ]; then
-            MAJOR=$(grep "#define NODE_MAJOR_VERSION" bundle/rootfs/usr/local/include/node/node_version.h | awk '{print $3}')
-            MINOR=$(grep "#define NODE_MINOR_VERSION" bundle/rootfs/usr/local/include/node/node_version.h | awk '{print $3}')
-            PATCH=$(grep "#define NODE_PATCH_VERSION" bundle/rootfs/usr/local/include/node/node_version.h | awk '{print $3}')
-            NODE_VER="v${MAJOR}.${MINOR}.${PATCH}"
+            OS_VERSION="Debian ${DEBIAN_VERSION} Trixie Slim"
           else
-            NODE_VER="24.x LTS"
+            OS_VERSION="Debian Trixie Slim"
           fi
 
-          echo "RELEASE_NAME=Homebridge V${HB_VER}-${CURRENT_DATE}" >> $GITHUB_ENV
-          echo "BUILD_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
-          echo "HB_VERSION=${HB_VER}" >> $GITHUB_ENV
-          echo "UI_VERSION=${UI_VER}" >> $GITHUB_ENV
-          echo "ALPINE_VERSION=${ALPINE_VER}" >> $GITHUB_ENV
-          echo "NODE_VERSION=${NODE_VER}" >> $GITHUB_ENV
+          # ========================================================
+          # Node.js version
+          # ========================================================
+          if [ -f "bundle/rootfs/usr/local/include/node/node_version.h" ]; then
 
+            MAJOR=$(
+              grep "#define NODE_MAJOR_VERSION" \
+              bundle/rootfs/usr/local/include/node/node_version.h \
+              | awk '{print $3}'
+            )
+
+            MINOR=$(
+              grep "#define NODE_MINOR_VERSION" \
+              bundle/rootfs/usr/local/include/node/node_version.h \
+              | awk '{print $3}'
+            )
+
+            PATCH=$(
+              grep "#define NODE_PATCH_VERSION" \
+              bundle/rootfs/usr/local/include/node/node_version.h \
+              | awk '{print $3}'
+            )
+
+            NODE_VER="v${MAJOR}.${MINOR}.${PATCH}"
+
+          else
+            NODE_VER="24.x"
+          fi
+
+          # ========================================================
+          # Export metadata
+          # ========================================================
+          echo "RELEASE_NAME=Homebridge V${HB_VER}-${CURRENT_DATE}" >> "$GITHUB_ENV"
+          echo "BUILD_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+          echo "HB_VERSION=${HB_VER}" >> "$GITHUB_ENV"
+          echo "UI_VERSION=${UI_VER}" >> "$GITHUB_ENV"
+          echo "OS_VERSION=${OS_VERSION}" >> "$GITHUB_ENV"
+          echo "NODE_VERSION=${NODE_VER}" >> "$GITHUB_ENV"
+
+      # ==========================================================
+      # STEP 5: Publish release
+      # ==========================================================
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
@@ -163,10 +330,14 @@ jobs:
           fail_on_unmatched_files: true
           files: homebridge-arm64.tar.gz
           body: |
-            Homebridge UXC Bundle (Stabilized Baseline)
+            Homebridge UXC Bundle
 
-            - OS Base: ${{ env.ALPINE_VERSION }} (arm64)
+            - Architecture: ARM64
+            - OS Base: ${{ env.OS_VERSION }}
             - Node.js Runtime: ${{ env.NODE_VERSION }}
             - Homebridge Core: v${{ env.HB_VERSION }}
             - Homebridge UI: v${{ env.UI_VERSION }}
             - Build Commit: ${{ env.BUILD_SHA }}
+            - Runtime: Native ARM64
+            - Container Runtime: UXC
+            - Init System: Tini
