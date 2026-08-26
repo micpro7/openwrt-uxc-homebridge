@@ -7,7 +7,6 @@ on:
         description: "Homebridge version"
         default: "latest"
         required: false
-
       config_ui_version:
         description: "Config UI X version"
         default: "latest"
@@ -17,8 +16,7 @@ on:
     - cron: "0 6 * * 1"
 
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - "Dockerfile"
       - "config.json"
@@ -38,19 +36,19 @@ jobs:
     steps:
 
       # ==========================================================
-      # Checkout
+      # Checkout repository
       # ==========================================================
       - name: Checkout repo
         uses: actions/checkout@v5
 
       # ==========================================================
-      # Setup Buildx
+      # Setup Docker Buildx
       # ==========================================================
       - name: Setup Buildx
         uses: docker/setup-buildx-action@v4
 
       # ==========================================================
-      # STEP 1: Build ARM64 Docker image
+      # STEP 1: Build native ARM64 image
       # ==========================================================
       - name: Build rootfs (Docker)
         run: |
@@ -103,12 +101,12 @@ jobs:
             bundle/rootfs/tmp/*
 
           # ========================================================
-          # Copy OCI configuration
+          # Copy UXC OCI configuration
           # ========================================================
           cp ./config.json bundle/config.json
 
           # ========================================================
-          # Validate JSON
+          # Validate OCI configuration
           # ========================================================
           python3 -m json.tool bundle/config.json > /dev/null
 
@@ -130,13 +128,17 @@ jobs:
 
           args = config["process"]["args"]
 
-          assert args[0] == "/usr/bin/tini", \
-              f"Unexpected init: {args[0]}"
+          assert args == [
+              "/usr/bin/tini",
+              "-g",
+              "--",
+              "/usr/local/bin/homebridge-entrypoint.sh"
+          ], f"Unexpected process args: {args}"
 
-          assert "/usr/local/bin/entrypoint.sh" in args, \
-              "Missing Homebridge entrypoint"
+          assert config["process"]["user"]["uid"] == 0
+          assert config["process"]["user"]["gid"] == 0
 
-          assert config["root"]["path"] == "rootfs"
+          assert config["linux"]["resources"]["memory"]["limit"] == 314572800
 
           print("OCI config OK")
           PY
@@ -157,6 +159,7 @@ jobs:
           # ========================================================
           test -x bundle/rootfs/usr/local/bin/node
           test -x bundle/rootfs/usr/local/bin/npm
+          test -x bundle/rootfs/usr/local/bin/npx
 
           # ========================================================
           # Validate Homebridge
@@ -171,7 +174,7 @@ jobs:
             bundle/rootfs/usr/local/lib/node_modules/homebridge-config-ui-x/package.json
 
           # ========================================================
-          # Validate runtime components
+          # Validate UXC runtime components
           # ========================================================
           test -x bundle/rootfs/usr/bin/tini
           test -x bundle/rootfs/usr/bin/sudo
@@ -179,9 +182,10 @@ jobs:
           test -x bundle/rootfs/usr/bin/bash
 
           # ========================================================
-          # Validate entrypoint
+          # Validate custom Homebridge entrypoint
           # ========================================================
-          test -x bundle/rootfs/usr/local/bin/entrypoint.sh
+          test -x \
+            bundle/rootfs/usr/local/bin/homebridge-entrypoint.sh
 
           # ========================================================
           # Validate persistent directories
@@ -201,6 +205,41 @@ jobs:
             bundle/rootfs/lib/aarch64-linux-gnu/libc.so.6
 
           # ========================================================
+          # Validate required OCI mount definitions
+          # ========================================================
+          python3 - <<'PY'
+          import json
+
+          with open("bundle/config.json") as f:
+              config = json.load(f)
+
+          mounts = {
+              m["destination"]: m
+              for m in config["mounts"]
+          }
+
+          required_mounts = [
+              "/proc",
+              "/dev",
+              "/dev/pts",
+              "/dev/shm",
+              "/tmp",
+              "/var/lib/homebridge",
+              "/etc/resolv.conf",
+              "/var/run/dbus",
+              "/var/run/avahi-daemon"
+          ]
+
+          for mount in required_mounts:
+              assert mount in mounts, f"Missing mount: {mount}"
+
+          assert mounts["/etc/resolv.conf"]["type"] == "none"
+          assert mounts["/etc/resolv.conf"]["source"] != ""
+
+          print("OCI mounts OK")
+          PY
+
+          # ========================================================
           # Create final UXC bundle
           # ========================================================
           tar \
@@ -212,7 +251,7 @@ jobs:
             -C bundle .
 
       # ==========================================================
-      # STEP 3: Sanity check
+      # STEP 3: Sanity check bundle
       # ==========================================================
       - name: Sanity check bundle
         run: |
@@ -236,7 +275,7 @@ jobs:
             | grep -q "rootfs/usr/local/bin/hb-service"
 
           tar -tzf homebridge-arm64.tar.gz \
-            | grep -q "rootfs/usr/local/bin/entrypoint.sh"
+            | grep -q "rootfs/usr/local/bin/homebridge-entrypoint.sh"
 
           tar -tzf homebridge-arm64.tar.gz \
             | grep -q "rootfs/usr/bin/tini"
@@ -253,7 +292,7 @@ jobs:
           echo "=========================================="
 
       # ==========================================================
-      # STEP 4: Determine versions
+      # STEP 4: Determine versions & metadata
       # ==========================================================
       - name: Determine Release Name & Metadata
         run: |
@@ -348,7 +387,6 @@ jobs:
           make_latest: true
           fail_on_unmatched_files: true
           files: homebridge-arm64.tar.gz
-
           body: |
             Homebridge UXC Bundle
 
@@ -361,3 +399,5 @@ jobs:
             - Runtime: Native ARM64
             - Container Runtime: UXC
             - Init System: Tini
+            - DNS: Container-specific resolv.conf
+            - DNS Servers: 1.1.1.1 / 9.9.9.9
