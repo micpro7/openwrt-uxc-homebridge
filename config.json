@@ -221,7 +221,7 @@
   "linux": {
     "resources": {
       "memory": {
-        "limit": 314572800
+        "limit": 536870912
       }
     },
 
